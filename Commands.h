@@ -7,10 +7,10 @@
 #define COMMAND_MAX_ARGS (20)
 
 class Command {
-// TODO: Add your data members
+    const char* cmd_line;
  public:
   Command(const char* cmd_line);
-  virtual ~Command();
+  virtual ~Command() = default; // TODO: our default
   virtual void execute() = 0;
   //virtual void prepare();
   //virtual void cleanup();
