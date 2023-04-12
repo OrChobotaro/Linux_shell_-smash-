@@ -79,8 +79,9 @@ void _removeBackgroundSign(char* cmd_line) {
 
 // TODO: Add your implementation for classes in Commands.h 
 
-SmallShell::SmallShell() {
-    plastPwd = new char[200];
+SmallShell::SmallShell() : prompt("smash") {
+  plastPwd = new char[200];
+// TODO: add your implementation
 }
 
 SmallShell::~SmallShell() {
@@ -95,14 +96,18 @@ Command * SmallShell::CreateCommand(const char* cmd_line) {
 
   string cmd_s = _trim(string(cmd_line));
   string firstWord = cmd_s.substr(0, cmd_s.find_first_of(" \n"));
-    char *args[COMMAND_MAX_ARGS];
-    int lengthArgs = _parseCommandLine(cmd_s.c_str(), args);
+
+  char *args[COMMAND_MAX_ARGS];
+  int lengthArgs = _parseCommandLine(cmd_s.c_str(), args);
 
   if (firstWord.compare("pwd") == 0) {
-    return new GetCurrDirCommand(cmd_line);
+      return new GetCurrDirCommand(cmd_line);
   }
   else if (firstWord.compare("showpid") == 0) {
-    return new ShowPidCommand(cmd_line);
+      return new ShowPidCommand(cmd_line);
+  }
+  else if (firstWord.compare("chprompt") == 0) {
+      return new ChangePromptCommand(cmd_line, &prompt, args[1]);
   }
   else if (firstWord.compare("cd") == 0){
       return new ChangeDirCommand(cmd_line, &(this->plastPwd), args[1], lengthArgs);
@@ -134,8 +139,9 @@ GetCurrDirCommand::GetCurrDirCommand(const char *cmd_line): BuiltInCommand(cmd_l
 
 void GetCurrDirCommand::execute() {
     char cwd[50];
-    char* str = getcwd(cwd, sizeof(cwd));
-    write(1, cwd, strlen(str));
+    string str1 = getcwd(cwd, sizeof(cwd));
+    string str2 = str1 + "\n";
+    write(1, str2.c_str(), str2.length());
 }
 
 //// showpid
@@ -144,10 +150,17 @@ ShowPidCommand::ShowPidCommand(const char *cmd_line): BuiltInCommand(cmd_line) {
 
 void ShowPidCommand::execute() {
     pid_t pid = getpid();
-    string pid_str = "smash pid is " + to_string(pid);
+    string pid_str = "smash pid is " + to_string(pid) + "\n";
     write(1, pid_str.c_str(), pid_str.size());
 }
 
+ChangePromptCommand::ChangePromptCommand(const char *cmd_line, string* prompt, char* new_prompt): BuiltInCommand(cmd_line), prompt(prompt), new_prompt(new_prompt) {}
+
+void ChangePromptCommand::execute() {
+    if (new_prompt) {
+        *prompt = new_prompt;
+    } else {
+        *prompt = "smash";
 
 //// cd
 
