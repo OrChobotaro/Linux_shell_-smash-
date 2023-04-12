@@ -49,8 +49,12 @@ class RedirectionCommand : public Command {
 };
 
 class ChangeDirCommand : public BuiltInCommand {
+public:
 // TODO: Add your data members public:
-  ChangeDirCommand(const char* cmd_line, char** plastPwd);
+    char** plastPwd;
+    std::string secondWord;
+    int lengthArgs;
+  ChangeDirCommand(const char* cmd_line, char** plastPwd, std::string secondWord, int lengthArgs);
   virtual ~ChangeDirCommand() {}
   void execute() override;
 };
@@ -165,11 +169,12 @@ class KillCommand : public BuiltInCommand {
 };
 
 class SmallShell {
- private:
-  // TODO: Add your data members
+private:
   SmallShell();
- public:
-  Command *CreateCommand(const char* cmd_line);
+
+public:
+    char *plastPwd;
+    Command *CreateCommand(const char* cmd_line);
   SmallShell(SmallShell const&)      = delete; // disable copy ctor
   void operator=(SmallShell const&)  = delete; // disable = operator
   static SmallShell& getInstance() // make SmallShell singleton
