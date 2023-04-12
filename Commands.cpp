@@ -80,6 +80,7 @@ void _removeBackgroundSign(char* cmd_line) {
 // TODO: Add your implementation for classes in Commands.h 
 
 SmallShell::SmallShell() : prompt("smash") {
+  plastPwd = new char[200];
 // TODO: add your implementation
 }
 
@@ -95,8 +96,9 @@ Command * SmallShell::CreateCommand(const char* cmd_line) {
 
   string cmd_s = _trim(string(cmd_line));
   string firstWord = cmd_s.substr(0, cmd_s.find_first_of(" \n"));
-  char* args[COMMAND_MAX_ARGS];
-  int arg_num = _parseCommandLine(cmd_s.c_str(), args);
+
+  char *args[COMMAND_MAX_ARGS];
+  int lengthArgs = _parseCommandLine(cmd_s.c_str(), args);
 
   if (firstWord.compare("pwd") == 0) {
       return new GetCurrDirCommand(cmd_line);
@@ -106,6 +108,9 @@ Command * SmallShell::CreateCommand(const char* cmd_line) {
   }
   else if (firstWord.compare("chprompt") == 0) {
       return new ChangePromptCommand(cmd_line, &prompt, args[1]);
+  }
+  else if (firstWord.compare("cd") == 0){
+      return new ChangeDirCommand(cmd_line, &(this->plastPwd), args[1], lengthArgs);
   }
 //  else if ...
 //  .....
@@ -128,6 +133,8 @@ Command::Command(const char *cmd_line): cmd_line(cmd_line) {}
 
 BuiltInCommand::BuiltInCommand(const char *cmd_line): Command(cmd_line) {}
 
+//// pwd
+
 GetCurrDirCommand::GetCurrDirCommand(const char *cmd_line): BuiltInCommand(cmd_line) {}
 
 void GetCurrDirCommand::execute() {
@@ -136,6 +143,8 @@ void GetCurrDirCommand::execute() {
     string str2 = str1 + "\n";
     write(1, str2.c_str(), str2.length());
 }
+
+//// showpid
 
 ShowPidCommand::ShowPidCommand(const char *cmd_line): BuiltInCommand(cmd_line) {}
 
@@ -152,5 +161,31 @@ void ChangePromptCommand::execute() {
         *prompt = new_prompt;
     } else {
         *prompt = "smash";
+
+//// cd
+
+ChangeDirCommand::ChangeDirCommand(const char *cmd_line, char **plastPwd, std::string secondWord, int lengthArgs) : BuiltInCommand(cmd_line), plastPwd(plastPwd)
+                                                                                                , secondWord(secondWord), lengthArgs(lengthArgs){}
+
+void ChangeDirCommand::execute() {
+    char cwd[50];
+    char* str = getcwd(cwd, sizeof(cwd));
+
+    if(lengthArgs > 2)
+        write(1, "smash error: cd: too many arguments", 35);
+    else if(secondWord.compare("-") == 0){
+        if(!(*plastPwd))
+            write(1, "smash error: cd: OLDPWD not set", 31);
+        else{
+            cout << "chdir: " << chdir(*plastPwd);
+            strcpy(*plastPwd, str);
+        }
+    }
+    else{
+        if(chdir(secondWord.c_str())==0){
+            strcpy(*plastPwd, str);
+        }
+        else //todo: remove faliure
+            cout << "faliure :(";
     }
 }

@@ -60,8 +60,12 @@ public:
 };
 
 class ChangeDirCommand : public BuiltInCommand {
+public:
 // TODO: Add your data members public:
-  ChangeDirCommand(const char* cmd_line, char** plastPwd);
+    char** plastPwd;
+    std::string secondWord;
+    int lengthArgs;
+  ChangeDirCommand(const char* cmd_line, char** plastPwd, std::string secondWord, int lengthArgs);
   virtual ~ChangeDirCommand() {}
   void execute() override;
 };
@@ -180,6 +184,7 @@ class SmallShell {
     SmallShell();
 public:
     std::string prompt;
+    char *plastPwd;
     Command *CreateCommand(const char* cmd_line);
     SmallShell(SmallShell const&)      = delete; // disable copy ctor
     void operator=(SmallShell const&)  = delete; // disable = operator
@@ -189,6 +194,7 @@ public:
         // Instantiated on first use.
         return instance;
     }
+
   ~SmallShell();
   void executeCommand(const char* cmd_line);
   // TODO: add extra methods as needed
