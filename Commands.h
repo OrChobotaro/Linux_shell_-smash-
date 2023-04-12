@@ -2,6 +2,7 @@
 #define SMASH_COMMAND_H_
 
 #include <vector>
+#include <string.h>
 
 #define COMMAND_ARGS_MAX_LENGTH (200)
 #define COMMAND_MAX_ARGS (20)
@@ -46,6 +47,16 @@ class RedirectionCommand : public Command {
   void execute() override;
   //void prepare() override;
   //void cleanup() override;
+};
+
+class ChangePromptCommand : public BuiltInCommand {
+public:
+    class SmallShell;
+    std::string* prompt;
+    char* new_prompt;
+    ChangePromptCommand(const char* cmd_line, std::string* prompt, char* new_prompt);
+    virtual ~ChangePromptCommand() {}
+    void execute() override;
 };
 
 class ChangeDirCommand : public BuiltInCommand {
@@ -166,18 +177,18 @@ class KillCommand : public BuiltInCommand {
 
 class SmallShell {
  private:
-  // TODO: Add your data members
-  SmallShell();
- public:
-  Command *CreateCommand(const char* cmd_line);
-  SmallShell(SmallShell const&)      = delete; // disable copy ctor
-  void operator=(SmallShell const&)  = delete; // disable = operator
-  static SmallShell& getInstance() // make SmallShell singleton
-  {
-    static SmallShell instance; // Guaranteed to be destroyed.
-    // Instantiated on first use.
-    return instance;
-  }
+    SmallShell();
+public:
+    std::string prompt;
+    Command *CreateCommand(const char* cmd_line);
+    SmallShell(SmallShell const&)      = delete; // disable copy ctor
+    void operator=(SmallShell const&)  = delete; // disable = operator
+    static SmallShell& getInstance() // make SmallShell singleton
+    {
+        static SmallShell instance; // Guaranteed to be destroyed.
+        // Instantiated on first use.
+        return instance;
+    }
   ~SmallShell();
   void executeCommand(const char* cmd_line);
   // TODO: add extra methods as needed
