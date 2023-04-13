@@ -54,7 +54,7 @@ int _parseCommandLine(const char* cmd_line, char** args) {
   FUNC_EXIT()
 }
 
-bool _isBackgroundComamnd(const char* cmd_line) {
+bool _isBackgroundCommand(const char* cmd_line) {
   const string str(cmd_line);
   return str[str.find_last_not_of(WHITESPACE)] == '&';
 }
@@ -80,37 +80,42 @@ void _removeBackgroundSign(char* cmd_line) {
 // TODO: Add your implementation for classes in Commands.h 
 
 SmallShell::SmallShell() : prompt("smash") {
-  plastPwd = new char[200];
-// TODO: add your implementation
+    plastPwd = new char[200];
+
 }
 
 SmallShell::~SmallShell() {
-// TODO: add your implementation
+    delete[] plastPwd;
 }
 
 /**
 * Creates and returns a pointer to Command class which matches the given command line (cmd_line)
 */
 Command * SmallShell::CreateCommand(const char* cmd_line) {
-	// For example:
-
-  string cmd_s = _trim(string(cmd_line));
-  string firstWord = cmd_s.substr(0, cmd_s.find_first_of(" \n"));
+    bool inBg = false;
+    char temp_cmd_line[200];
+    strcpy(temp_cmd_line, cmd_line);
+    if (_isBackgroundCommand(temp_cmd_line)) {
+        inBg = true;
+        _removeBackgroundSign(temp_cmd_line);
+    }
+    string cmd_s = _trim(string(temp_cmd_line));
+    string firstWord = cmd_s.substr(0, cmd_s.find_first_of(" \n"));
 
   char *args[COMMAND_MAX_ARGS];
   int lengthArgs = _parseCommandLine(cmd_s.c_str(), args);
 
   if (firstWord.compare("pwd") == 0) {
-      return new GetCurrDirCommand(cmd_line);
+      return new GetCurrDirCommand(temp_cmd_line);
   }
   else if (firstWord.compare("showpid") == 0) {
-      return new ShowPidCommand(cmd_line);
+      return new ShowPidCommand(temp_cmd_line);
   }
   else if (firstWord.compare("chprompt") == 0) {
-      return new ChangePromptCommand(cmd_line, &prompt, args[1]);
+      return new ChangePromptCommand(temp_cmd_line, &prompt, args[1]);
   }
   else if (firstWord.compare("cd") == 0){
-      return new ChangeDirCommand(cmd_line, &(this->plastPwd), args[1], lengthArgs);
+      return new ChangeDirCommand(temp_cmd_line, &(this->plastPwd), args[1], lengthArgs);
   }
 //  else if ...
 //  .....
@@ -161,7 +166,8 @@ void ChangePromptCommand::execute() {
         *prompt = new_prompt;
     } else {
         *prompt = "smash";
-
+    }
+}
 //// cd
 
 ChangeDirCommand::ChangeDirCommand(const char *cmd_line, char **plastPwd, std::string secondWord, int lengthArgs) : BuiltInCommand(cmd_line), plastPwd(plastPwd)
@@ -177,7 +183,6 @@ void ChangeDirCommand::execute() {
         if(!(*plastPwd))
             write(1, "smash error: cd: OLDPWD not set", 31);
         else{
-            cout << "chdir: " << chdir(*plastPwd);
             strcpy(*plastPwd, str);
         }
     }
