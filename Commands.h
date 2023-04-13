@@ -8,9 +8,9 @@
 #define COMMAND_MAX_ARGS (20)
 
 class Command {
-    const char* cmd_line;
  public:
-  Command(const char* cmd_line);
+    const char* cmd_line;
+    Command(const char* cmd_line);
   virtual ~Command() = default; // TODO: our default
   virtual void execute() = 0;
   //virtual void prepare();
@@ -68,7 +68,8 @@ public:
     char** plastPwd;
     std::string secondWord;
     int lengthArgs;
-  ChangeDirCommand(const char* cmd_line, char** plastPwd, std::string secondWord, int lengthArgs);
+    bool* pathChanged;
+  ChangeDirCommand(const char* cmd_line, char** plastPwd, std::string secondWord, int lengthArgs, bool* pathChanged);
   virtual ~ChangeDirCommand() {}
   void execute() override;
 };
@@ -187,8 +188,10 @@ class SmallShell {
     SmallShell();
 public:
     std::string prompt;
+    bool pathChanged;
     char *plastPwd;
     char **args;
+    char *cmd_line;
     Command *CreateCommand(const char* cmd_line);
     SmallShell(SmallShell const&)      = delete; // disable copy ctor
     void operator=(SmallShell const&)  = delete; // disable = operator
