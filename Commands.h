@@ -26,7 +26,10 @@ class BuiltInCommand : public Command {
 
 class ExternalCommand : public Command {
  public:
-  ExternalCommand(const char* cmd_line);
+    bool isComplex;
+    bool isBg;
+    char **args;
+  ExternalCommand(const char* cmd_line, bool isComplex, bool isBg, char **args);
   virtual ~ExternalCommand() {}
   void execute() override;
 };
