@@ -7,6 +7,7 @@
 #include <iomanip>
 #include "Commands.h"
 
+
 using namespace std;
 
 const std::string WHITESPACE = " \n\r\t\f\v";
@@ -90,7 +91,7 @@ bool _isCommandComplex(string cmd_s){
 
 // TODO: Add your implementation for classes in Commands.h 
 
-SmallShell::SmallShell() : prompt("smash") {
+SmallShell::SmallShell() : prompt("smash"), jobs() {
     plastPwd = new char[COMMAND_ARGS_MAX_LENGTH];
     args = new char*[COMMAND_MAX_ARGS];
 }
@@ -104,7 +105,7 @@ SmallShell::~SmallShell() {
 /**
 * Creates and returns a pointer to Command class which matches the given command line (cmd_line)
 */
-Command * SmallShell::CreateCommand(const char* cmd_line) {
+Command * SmallShell::CreateCommand( char* cmd_line) {
     // check if & exists
     bool inBg = false;
     char temp_cmd_line[200];
@@ -136,13 +137,13 @@ Command * SmallShell::CreateCommand(const char* cmd_line) {
 //  else if ...
 //  .....
   else {
-    return new ExternalCommand(temp_cmd_line, isComplex, inBg, args);
+    return new ExternalCommand(cmd_line, isComplex, inBg, args, jobs);
   }
 
   return nullptr;
 }
 
-void SmallShell::executeCommand(const char *cmd_line) {
+void SmallShell::executeCommand( char *cmd_line) {
   // TODO: Add your implementation here
   // for example:
    Command* cmd = CreateCommand(cmd_line);
@@ -150,24 +151,25 @@ void SmallShell::executeCommand(const char *cmd_line) {
   // Please note that you must fork smash process for some commands (e.g., external commands....)
 }
 
-Command::Command(const char *cmd_line): cmd_line(cmd_line) {}
+Command::Command( char *cmd_line): cmd_line(cmd_line) {}
 
-BuiltInCommand::BuiltInCommand(const char *cmd_line): Command(cmd_line) {}
+BuiltInCommand::BuiltInCommand( char *cmd_line): Command(cmd_line) {}
 
 //// pwd
 
-GetCurrDirCommand::GetCurrDirCommand(const char *cmd_line): BuiltInCommand(cmd_line) {}
+GetCurrDirCommand::GetCurrDirCommand( char *cmd_line): BuiltInCommand(cmd_line) {}
 
 void GetCurrDirCommand::execute() {
     char cwd[50];
     string str1 = getcwd(cwd, sizeof(cwd));
     string str2 = str1 + "\n";
     write(1, str2.c_str(), str2.length());
+
 }
 
 //// showpid
 
-ShowPidCommand::ShowPidCommand(const char *cmd_line): BuiltInCommand(cmd_line) {}
+ShowPidCommand::ShowPidCommand( char *cmd_line): BuiltInCommand(cmd_line) {}
 
 void ShowPidCommand::execute() {
     pid_t pid = getpid();
@@ -178,7 +180,7 @@ void ShowPidCommand::execute() {
 
 //// chprompt
 
-ChangePromptCommand::ChangePromptCommand(const char *cmd_line, string* prompt, char* new_prompt): BuiltInCommand(cmd_line), prompt(prompt), new_prompt(new_prompt) {}
+ChangePromptCommand::ChangePromptCommand( char *cmd_line, string* prompt, char* new_prompt): BuiltInCommand(cmd_line), prompt(prompt), new_prompt(new_prompt) {}
 
 void ChangePromptCommand::execute() {
     if (new_prompt) {
@@ -189,7 +191,7 @@ void ChangePromptCommand::execute() {
 }
 //// cd
 
-ChangeDirCommand::ChangeDirCommand(const char *cmd_line, char **plastPwd, std::string secondWord, int lengthArgs) : BuiltInCommand(cmd_line), plastPwd(plastPwd)
+ChangeDirCommand::ChangeDirCommand( char *cmd_line, char **plastPwd, std::string secondWord, int lengthArgs) : BuiltInCommand(cmd_line), plastPwd(plastPwd)
                                                                                                 , secondWord(secondWord), lengthArgs(lengthArgs){}
 
 void ChangeDirCommand::execute() {
@@ -216,8 +218,8 @@ void ChangeDirCommand::execute() {
 
 //// external command
 
-ExternalCommand::ExternalCommand(const char *cmd_line, bool isComplex, bool isBg, char **args) :
-                                    Command(cmd_line), isComplex(isComplex), isBg(isBg) , args(args){}
+ExternalCommand::ExternalCommand( char *cmd_line, bool isComplex, bool isBg, char **args, JobsList jobs) :
+                                    Command(cmd_line), isComplex(isComplex), isBg(isBg) , args(args), jobs(jobs){}
 
 
 void ExternalCommand::execute() {
@@ -238,6 +240,12 @@ void ExternalCommand::execute() {
         }
 
     } else if(!isComplex && isBg) {
+        cout << "cmd original: " << cmd_line << endl;
+        jobs.addJob(cmd_line, false);
+        cout << "size = " << jobs.jobList.size() << endl;
+        cout << "cmd line " << jobs.jobList.front().commandLine << endl;
+        cout << "jobid " << jobs.jobList.front().jobId << endl;
+        cout << "pid " << jobs.jobList.front().pid << endl;
         // AMIR DOES THIS
         // same without wait
         return;
@@ -255,4 +263,51 @@ void ExternalCommand::execute() {
 
 
     }
+}
+
+
+//// Job Entry
+
+JobsList::JobEntry::JobEntry(int jobId, int pid, bool isStopped,  char *commandLine, int secondsElapsed):
+        jobId(jobId), pid(pid), isStopped(isStopped), commandLine(commandLine), secondsElapsed(secondsElapsed) {}
+
+JobsList::JobEntry::JobEntry(const JobEntry &other) {
+    jobId = other.jobId;
+    pid = other.pid;
+    isStopped = other.isStopped;
+    secondsElapsed = other.secondsElapsed;
+    strcpy(commandLine, other.commandLine);
+}
+//// jobs
+
+void JobsList::addJob(char* cmd, bool isStopped){
+
+    int jobId;
+    cout << "------1-----" << endl;
+    if(!jobList.empty()){
+        cout << "------2-----" << endl;
+        jobId = jobList.back().jobId + 1;
+    } else {
+        cout << "------3-----" << endl;
+        jobId = 1;
+    }
+
+    time_t startTime = time(nullptr);
+    cout << "------4-----" << endl;
+
+    pid_t pid = getpid();
+    cout << "------5-----" << endl;
+
+    cout << "cmd before: " << cmd << endl;
+    JobsList::JobEntry newJob(jobId, pid, isStopped, cmd, startTime);
+    cout << "------6-----" << endl;
+
+    cout << "jobid = " << newJob.jobId << endl;
+    cout << "pid " << newJob.pid << endl;
+    cout << "cmd " << newJob.commandLine << endl;
+
+    jobList.push_back(newJob);
+
+    cout << "------7-----" << endl;
+
 }
