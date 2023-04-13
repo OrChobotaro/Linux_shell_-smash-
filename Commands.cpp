@@ -91,14 +91,17 @@ bool _isCommandComplex(string cmd_s){
 
 // TODO: Add your implementation for classes in Commands.h 
 
-SmallShell::SmallShell() : prompt("smash"), jobs() {
+SmallShell::SmallShell() : prompt("smash"), jobs(), pathChanged(false)  {
+
     plastPwd = new char[COMMAND_ARGS_MAX_LENGTH];
     args = new char*[COMMAND_MAX_ARGS];
+    cmd_line = new char[COMMAND_ARGS_MAX_LENGTH];
 }
 
 SmallShell::~SmallShell() {
     delete[] plastPwd;
     delete[] args;
+    delete[] cmd_line;
 }
 
 
@@ -108,7 +111,7 @@ SmallShell::~SmallShell() {
 Command * SmallShell::CreateCommand( char* cmd_line) {
     // check if & exists
     bool inBg = false;
-    char temp_cmd_line[200];
+    char temp_cmd_line[COMMAND_ARGS_MAX_LENGTH];
     strcpy(temp_cmd_line, cmd_line);
     if (_isBackgroundCommand(temp_cmd_line)) {
         inBg = true;
@@ -123,21 +126,23 @@ Command * SmallShell::CreateCommand( char* cmd_line) {
     bool isComplex = _isCommandComplex(cmd_s);
 
   if (firstWord.compare("pwd") == 0) {
-      return new GetCurrDirCommand(temp_cmd_line);
+      return new GetCurrDirCommand(cmd_line);
   }
   else if (firstWord.compare("showpid") == 0) {
-      return new ShowPidCommand(temp_cmd_line);
+      return new ShowPidCommand(cmd_line);
   }
   else if (firstWord.compare("chprompt") == 0) {
-      return new ChangePromptCommand(temp_cmd_line, &prompt, args[1]);
+      return new ChangePromptCommand(cmd_line, &prompt, args[1]);
   }
   else if (firstWord.compare("cd") == 0){
-      return new ChangeDirCommand(temp_cmd_line, &(this->plastPwd), args[1], lengthArgs);
+      return new ChangeDirCommand(cmd_line, &(this->plastPwd), args[1], lengthArgs, &pathChanged);
   }
 //  else if ...
 //  .....
   else {
+
     return new ExternalCommand(cmd_line, isComplex, inBg, args, jobs);
+
   }
 
   return nullptr;
@@ -190,26 +195,38 @@ void ChangePromptCommand::execute() {
     }
 }
 //// cd
+// TODO: handle syscall errors with perror
 
-ChangeDirCommand::ChangeDirCommand( char *cmd_line, char **plastPwd, std::string secondWord, int lengthArgs) : BuiltInCommand(cmd_line), plastPwd(plastPwd)
-                                                                                                , secondWord(secondWord), lengthArgs(lengthArgs){}
+
+ChangeDirCommand::ChangeDirCommand(
+        // TODO: handle case with no arguments
+        const char *cmd_line,
+        char **plastPwd,
+        std::string secondWord,
+        int lengthArgs,
+        bool* pathChanged) : BuiltInCommand(cmd_line), plastPwd(plastPwd), secondWord(secondWord), lengthArgs(lengthArgs), pathChanged(pathChanged) {}
+
 
 void ChangeDirCommand::execute() {
     char cwd[50];
     char* str = getcwd(cwd, sizeof(cwd));
 
     if(lengthArgs > 2)
-        write(1, "smash error: cd: too many arguments", 35);
+        write(2, "smash error: cd: too many arguments\n", 36);
     else if(secondWord.compare("-") == 0){
-        if(!(*plastPwd))
-            write(1, "smash error: cd: OLDPWD not set", 31);
+        if(*pathChanged) {
+            if(chdir(*plastPwd)==0) {
+                strcpy(*plastPwd, str);
+            }
+        }
         else{
-            strcpy(*plastPwd, str);
+            write(2, "smash error: cd: OLDPWD not set\n", 32);
         }
     }
     else{
         if(chdir(secondWord.c_str())==0){
             strcpy(*plastPwd, str);
+            *pathChanged = true;
         }
         else //todo: remove faliure
             cout << "faliure :(";
@@ -225,7 +242,6 @@ ExternalCommand::ExternalCommand( char *cmd_line, bool isComplex, bool isBg, cha
 void ExternalCommand::execute() {
 
     if(!isComplex && !isBg) {
-        int status;
         pid_t pid = fork();
         if(pid == 0){
             setpgrp();
@@ -233,32 +249,46 @@ void ExternalCommand::execute() {
             string cmd(args[0]);
             string concat = bin + cmd;
             execv(concat.c_str(), args);
-            cout << "EXECV FAILED" << endl;
+            cout << "simple EXECV FAILED" << endl;
             exit(1);
         } else if(pid > 0){
-            waitpid(pid, &status, 0);
+            waitpid(pid, nullptr, 0);
         }
 
     } else if(!isComplex && isBg) {
+
         cout << "cmd original: " << cmd_line << endl;
         jobs.addJob(cmd_line, false);
         cout << "size = " << jobs.jobList.size() << endl;
         cout << "cmd line " << jobs.jobList.front().commandLine << endl;
         cout << "jobid " << jobs.jobList.front().jobId << endl;
         cout << "pid " << jobs.jobList.front().pid << endl;
-        // AMIR DOES THIS
+
         // same without wait
         return;
 
 
     } else if (isComplex && !isBg) {
-        // WE DO THIS TOGETHER
-        return;
+        pid_t pid = fork();
+        if (pid == 0) {
+            setpgrp();
+            char* complexArgs[4];
+            char temp_cmd_line[COMMAND_ARGS_MAX_LENGTH];
+            strcpy(temp_cmd_line, cmd_line);
+            complexArgs[0] = (char*)"/bin/bash";
+            complexArgs[1] = (char*)"-c";
+            complexArgs[2] = temp_cmd_line;
+            complexArgs[3] = NULL;
+            execv(complexArgs[0], complexArgs);
+            cout << "complex EXECV FAILED" << endl;
+            exit(1);
 
-
+        } else if (pid > 0) {
+            waitpid(pid, nullptr, 0);
+        }
 
     } else if(isComplex && isBg) {
-
+        // same without wait
         return;
 
 

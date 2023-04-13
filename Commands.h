@@ -39,8 +39,10 @@ public:
 
 class Command {
  public:
+
      char* cmd_line;
     Command( char* cmd_line);
+
   virtual ~Command() = default; // TODO: our default
   virtual void execute() = 0;
   //virtual void prepare();
@@ -99,7 +101,8 @@ public:
     char** plastPwd;
     std::string secondWord;
     int lengthArgs;
-  ChangeDirCommand( char* cmd_line, char** plastPwd, std::string secondWord, int lengthArgs);
+    bool* pathChanged;
+  ChangeDirCommand( char* cmd_line, char** plastPwd, std::string secondWord, int lengthArgs, bool* pathChanged);
   virtual ~ChangeDirCommand() {}
   void execute() override;
 };
@@ -199,10 +202,14 @@ class SmallShell {
     SmallShell();
 public:
     std::string prompt;
+    bool pathChanged;
     char *plastPwd;
     char **args;
+
     JobsList jobs;
     Command *CreateCommand( char* cmd_line);
+    char *cmd_line;
+
     SmallShell(SmallShell const&)      = delete; // disable copy ctor
     void operator=(SmallShell const&)  = delete; // disable = operator
     static SmallShell& getInstance() // make SmallShell singleton
