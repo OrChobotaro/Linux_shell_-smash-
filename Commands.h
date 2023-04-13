@@ -22,7 +22,7 @@ public:
         JobEntry(const JobEntry& other);
         ~JobEntry() = default;
     };
-    std::list<JobsList::JobEntry> jobList;
+    std::list<JobsList::JobEntry*> jobList;
     JobsList() = default;
     ~JobsList() = default;
     void addJob( char* cmd, bool isStopped);
@@ -102,7 +102,7 @@ public:
     std::string secondWord;
     int lengthArgs;
     bool* pathChanged;
-  ChangeDirCommand( char* cmd_line, char** plastPwd, std::string secondWord, int lengthArgs, bool* pathChanged);
+  ChangeDirCommand(char* cmd_line, char** plastPwd, std::string secondWord, int lengthArgs, bool* pathChanged);
   virtual ~ChangeDirCommand() {}
   void execute() override;
 };
