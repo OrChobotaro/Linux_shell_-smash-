@@ -91,14 +91,14 @@ bool _isCommandComplex(string cmd_s){
 // TODO: Add your implementation for classes in Commands.h 
 
 SmallShell::SmallShell() : prompt("smash") {
-    plastPwd = new char[200];
-
+    plastPwd = new char[COMMAND_ARGS_MAX_LENGTH];
+    args = new char*[COMMAND_MAX_ARGS];
 }
 
 SmallShell::~SmallShell() {
     delete[] plastPwd;
+    delete[] args;
 }
-
 
 
 /**
@@ -116,10 +116,7 @@ Command * SmallShell::CreateCommand(const char* cmd_line) {
     string cmd_s = _trim(string(temp_cmd_line));
     string firstWord = cmd_s.substr(0, cmd_s.find_first_of(" \n"));
 
-    //
-  char *args[COMMAND_MAX_ARGS];
   int lengthArgs = _parseCommandLine(cmd_s.c_str(), args);
-
 
   // checks if command is external complex
     bool isComplex = _isCommandComplex(cmd_s);
@@ -139,8 +136,7 @@ Command * SmallShell::CreateCommand(const char* cmd_line) {
 //  else if ...
 //  .....
   else {
-      char **newArgs = args;
-    return new ExternalCommand(temp_cmd_line, isComplex, inBg, newArgs);
+    return new ExternalCommand(temp_cmd_line, isComplex, inBg, args);
   }
 
   return nullptr;
@@ -227,24 +223,28 @@ ExternalCommand::ExternalCommand(const char *cmd_line, bool isComplex, bool isBg
 void ExternalCommand::execute() {
 
     if(!isComplex && !isBg) {
+        int status;
         pid_t pid = fork();
         if(pid == 0){
-            cout << "SON" << endl;
             setpgrp();
-            execv(args[0], args);
+            string bin = "/bin/";
+            string cmd(args[0]);
+            string concat = bin + cmd;
+            execv(concat.c_str(), args);
+            cout << "EXECV FAILED" << endl;
+            exit(1);
         } else if(pid > 0){
-            cout << "PARENT" << endl;
-            waitpid(pid, NULL, 0);
+            waitpid(pid, &status, 0);
         }
 
     } else if(!isComplex && isBg) {
-
-
+        // AMIR DOES THIS
+        // same without wait
         return;
 
 
     } else if (isComplex && !isBg) {
-
+        // WE DO THIS TOGETHER
         return;
 
 
