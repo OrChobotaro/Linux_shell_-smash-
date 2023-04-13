@@ -77,6 +77,17 @@ void _removeBackgroundSign(char* cmd_line) {
   cmd_line[str.find_last_not_of(WHITESPACE, idx) + 1] = 0;
 }
 
+bool _isCommandComplex(string cmd_s){
+    size_t posQM = cmd_s.find("?");
+    size_t posAS = cmd_s.find("*");
+
+    if(posQM == string::npos && posAS == string::npos){
+        return false;
+    }
+    return true;
+
+}
+
 // TODO: Add your implementation for classes in Commands.h 
 
 SmallShell::SmallShell() : prompt("smash") {
@@ -88,10 +99,13 @@ SmallShell::~SmallShell() {
     delete[] plastPwd;
 }
 
+
+
 /**
 * Creates and returns a pointer to Command class which matches the given command line (cmd_line)
 */
 Command * SmallShell::CreateCommand(const char* cmd_line) {
+    // check if & exists
     bool inBg = false;
     char temp_cmd_line[200];
     strcpy(temp_cmd_line, cmd_line);
@@ -102,8 +116,13 @@ Command * SmallShell::CreateCommand(const char* cmd_line) {
     string cmd_s = _trim(string(temp_cmd_line));
     string firstWord = cmd_s.substr(0, cmd_s.find_first_of(" \n"));
 
+    //
   char *args[COMMAND_MAX_ARGS];
   int lengthArgs = _parseCommandLine(cmd_s.c_str(), args);
+
+
+  // checks if command is external complex
+    bool isComplex = _isCommandComplex(cmd_s);
 
   if (firstWord.compare("pwd") == 0) {
       return new GetCurrDirCommand(temp_cmd_line);
@@ -119,9 +138,10 @@ Command * SmallShell::CreateCommand(const char* cmd_line) {
   }
 //  else if ...
 //  .....
-//  else {
-//    return new ExternalCommand(cmd_line);
-//  }
+  else {
+      char **newArgs = args;
+    return new ExternalCommand(temp_cmd_line, isComplex, inBg, newArgs);
+  }
 
   return nullptr;
 }
@@ -159,6 +179,9 @@ void ShowPidCommand::execute() {
     write(1, pid_str.c_str(), pid_str.size());
 }
 
+
+//// chprompt
+
 ChangePromptCommand::ChangePromptCommand(const char *cmd_line, string* prompt, char* new_prompt): BuiltInCommand(cmd_line), prompt(prompt), new_prompt(new_prompt) {}
 
 void ChangePromptCommand::execute() {
@@ -192,5 +215,44 @@ void ChangeDirCommand::execute() {
         }
         else //todo: remove faliure
             cout << "faliure :(";
+    }
+}
+
+//// external command
+
+ExternalCommand::ExternalCommand(const char *cmd_line, bool isComplex, bool isBg, char **args) :
+                                    Command(cmd_line), isComplex(isComplex), isBg(isBg) , args(args){}
+
+
+void ExternalCommand::execute() {
+
+    if(!isComplex && !isBg) {
+        pid_t pid = fork();
+        if(pid == 0){
+            cout << "SON" << endl;
+            setpgrp();
+            execv(args[0], args);
+        } else if(pid > 0){
+            cout << "PARENT" << endl;
+            waitpid(pid, NULL, 0);
+        }
+
+    } else if(!isComplex && isBg) {
+
+
+        return;
+
+
+    } else if (isComplex && !isBg) {
+
+        return;
+
+
+
+    } else if(isComplex && isBg) {
+
+        return;
+
+
     }
 }
