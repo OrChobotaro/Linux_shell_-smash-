@@ -22,7 +22,7 @@ public:
         JobEntry(const JobEntry& other);
         ~JobEntry() = default;
     };
-    std::list<JobsList::JobEntry> jobList;
+    std::list<JobsList::JobEntry*> jobList;
     JobsList() = default;
     ~JobsList() = default;
     void addJob( char* cmd, bool isStopped);
@@ -141,9 +141,10 @@ class JobsCommand : public BuiltInCommand {
 };
 
 class ForegroundCommand : public BuiltInCommand {
- // TODO: Add your data members
+ JobsList* jobs;
+ std::string secondWord;
  public:
-  ForegroundCommand( char* cmd_line, JobsList* jobs);
+  ForegroundCommand(char* cmd_line, JobsList* jobs, std::string secondWord);
   virtual ~ForegroundCommand() {}
   void execute() override;
 };
@@ -202,11 +203,10 @@ class SmallShell {
     SmallShell();
 public:
     std::string prompt;
-    bool pathChanged;
     char *plastPwd;
     char **args;
-
     JobsList jobs;
+    bool pathChanged;
     Command *CreateCommand( char* cmd_line);
     char *cmd_line;
 

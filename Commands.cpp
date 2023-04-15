@@ -137,14 +137,12 @@ Command * SmallShell::CreateCommand( char* cmd_line) {
   else if (firstWord.compare("cd") == 0){
       return new ChangeDirCommand(cmd_line, &(this->plastPwd), args[1], lengthArgs, &pathChanged);
   }
-//  else if ...
-//  .....
-  else {
-
-    return new ExternalCommand(cmd_line, isComplex, inBg, args, jobs);
-
+  else if (firstWord.compare("fg") == 0){
+      return new ForegroundCommand(cmd_line, &jobs, args[1]);
   }
-
+  else {
+    return new ExternalCommand(cmd_line, isComplex, inBg, args, jobs);
+  }
   return nullptr;
 }
 
@@ -200,7 +198,7 @@ void ChangePromptCommand::execute() {
 
 ChangeDirCommand::ChangeDirCommand(
         // TODO: handle case with no arguments
-        const char *cmd_line,
+        char *cmd_line,
         char **plastPwd,
         std::string secondWord,
         int lengthArgs,
@@ -233,6 +231,29 @@ void ChangeDirCommand::execute() {
     }
 }
 
+
+//// fg
+
+ForegroundCommand::ForegroundCommand(char* cmd_line, JobsList* jobs, std::string secondWord): BuiltInCommand(cmd_line), jobs(jobs), secondWord(secondWord){}
+
+void ForegroundCommand::execute() {
+    int jobId = stoi(secondWord);
+    cout << jobId << endl;
+    pid_t pid;
+
+    std::list<JobsList::JobEntry*>::iterator it;
+    for (it = jobs->jobList.begin(); it != jobs->jobList.end(); ++it) { // todo: check if iterator works
+        if((*it)->jobId == jobId){
+            std::cout<<(*it)->jobId;
+            pid = (*it)->pid;
+        }
+    }
+    std::string errorJobNotExists = "smash error: fg: job-id " + secondWord + " does not exist\n";
+    write(1, errorJobNotExists.c_str(), 41);
+}
+
+
+
 //// external command
 
 ExternalCommand::ExternalCommand( char *cmd_line, bool isComplex, bool isBg, char **args, JobsList jobs) :
@@ -256,17 +277,20 @@ void ExternalCommand::execute() {
         }
 
     } else if(!isComplex && isBg) {
-
-        cout << "cmd original: " << cmd_line << endl;
-        jobs.addJob(cmd_line, false);
-        cout << "size = " << jobs.jobList.size() << endl;
-        cout << "cmd line " << jobs.jobList.front().commandLine << endl;
-        cout << "jobid " << jobs.jobList.front().jobId << endl;
-        cout << "pid " << jobs.jobList.front().pid << endl;
-
-        // same without wait
+        pid_t pid = fork();
+        if(pid == 0){
+            setpgrp();
+            string bin = "/bin/";
+            string cmd(args[0]);
+            string concat = bin + cmd;
+            execv(concat.c_str(), args);
+            cout << "simple EXECV FAILED" << endl;
+            return;
+            } else if (pid > 0){
+                cout << "PARENT IS HERE" << endl;
+                return;
+            }
         return;
-
 
     } else if (isComplex && !isBg) {
         pid_t pid = fork();
@@ -312,32 +336,32 @@ JobsList::JobEntry::JobEntry(const JobEntry &other) {
 
 void JobsList::addJob(char* cmd, bool isStopped){
 
-    int jobId;
-    cout << "------1-----" << endl;
-    if(!jobList.empty()){
-        cout << "------2-----" << endl;
-        jobId = jobList.back().jobId + 1;
-    } else {
-        cout << "------3-----" << endl;
-        jobId = 1;
-    }
-
-    time_t startTime = time(nullptr);
-    cout << "------4-----" << endl;
-
-    pid_t pid = getpid();
-    cout << "------5-----" << endl;
-
-    cout << "cmd before: " << cmd << endl;
-    JobsList::JobEntry newJob(jobId, pid, isStopped, cmd, startTime);
-    cout << "------6-----" << endl;
-
-    cout << "jobid = " << newJob.jobId << endl;
-    cout << "pid " << newJob.pid << endl;
-    cout << "cmd " << newJob.commandLine << endl;
-
-    jobList.push_back(newJob);
-
-    cout << "------7-----" << endl;
+//    int jobId;
+//    cout << "------1-----" << endl;
+//    if(!jobList.empty()){
+//        cout << "------2-----" << endl;
+//        jobId = jobList.back().jobId + 1;
+//    } else {
+//        cout << "------3-----" << endl;
+//        jobId = 1;
+//    }
+//
+//    time_t startTime = time(nullptr);
+//    cout << "------4-----" << endl;
+//
+//    pid_t pid = getpid();
+//    cout << "------5-----" << endl;
+//
+//    cout << "cmd before: " << cmd << endl;
+//    JobsList::JobEntry newJob(jobId, pid, isStopped, cmd, startTime);
+//    cout << "------6-----" << endl;
+//
+//    cout << "jobid = " << newJob.jobId << endl;
+//    cout << "pid " << newJob.pid << endl;
+//    cout << "cmd " << newJob.commandLine << endl;
+//
+//    jobList.push_back(newJob);
+//
+//    cout << "------7-----" << endl;
 
 }
