@@ -142,9 +142,10 @@ class JobsCommand : public BuiltInCommand {
 };
 
 class ForegroundCommand : public BuiltInCommand {
- // TODO: Add your data members
+ JobsList* jobs;
+ std::string secondWord;
  public:
-  ForegroundCommand( char* cmd_line, JobsList* jobs);
+  ForegroundCommand(char* cmd_line, JobsList* jobs, std::string secondWord);
   virtual ~ForegroundCommand() {}
   void execute() override;
 };
@@ -203,10 +204,10 @@ class SmallShell {
     SmallShell();
 public:
     std::string prompt;
-    JobsList jobs;
-    bool pathChanged;
     char *plastPwd;
     char **args;
+    JobsList jobs;
+    bool pathChanged;
     Command *CreateCommand( char* cmd_line);
     char *cmd_line;
 

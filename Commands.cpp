@@ -136,17 +136,15 @@ Command * SmallShell::CreateCommand( char* cmd_line) {
   else if (firstWord.compare("cd") == 0){
       return new ChangeDirCommand(cmd_line, &(this->plastPwd), args[1], lengthArgs, &pathChanged);
   }
+  else if (firstWord.compare("fg") == 0){
+      return new ForegroundCommand(cmd_line, &jobs, args[1]);
+  }
   else if (firstWord.compare("jobs") == 0){
       return new JobsCommand(cmd_line, &jobs);
   }
-//  else if ...
-//  .....
   else {
-
     return new ExternalCommand(cmd_line, isComplex, inBg, args, &jobs);
-
   }
-
   return nullptr;
 }
 
@@ -235,6 +233,29 @@ void ChangeDirCommand::execute() {
     }
 }
 
+
+//// fg
+
+ForegroundCommand::ForegroundCommand(char* cmd_line, JobsList* jobs, std::string secondWord): BuiltInCommand(cmd_line), jobs(jobs), secondWord(secondWord){}
+
+void ForegroundCommand::execute() {
+    int jobId = stoi(secondWord);
+    cout << jobId << endl;
+    pid_t pid;
+
+    std::list<JobsList::JobEntry*>::iterator it;
+    for (it = jobs->jobList.begin(); it != jobs->jobList.end(); ++it) { // todo: check if iterator works
+        if((*it)->jobId == jobId){
+            std::cout<<(*it)->jobId;
+            pid = (*it)->pid;
+        }
+    }
+    std::string errorJobNotExists = "smash error: fg: job-id " + secondWord + " does not exist\n";
+    write(1, errorJobNotExists.c_str(), 41);
+}
+
+
+
 //// external command
 
 ExternalCommand::ExternalCommand( char *cmd_line, bool isComplex, bool isBg, char **args, JobsList* jobs) :
@@ -266,13 +287,11 @@ void ExternalCommand::execute() {
             string concat = bin + cmd;
             execv(concat.c_str(), args);
             cout << "simple EXECV FAILED" << endl;
+
             exit(0);
         } else if (pid > 0) {
             jobs->addJob(cmd_line, false, pid);
         }
-
-        // same without wait
-        return;
 
     } else if (isComplex && !isBg) {
         pid_t pid = fork();
@@ -324,7 +343,6 @@ void JobsCommand::execute() {
 }
 
 void JobsList::addJob(char* cmd, bool isStopped, pid_t pid){
-
     int jobId;
     if(!jobList.empty()){
         jobId = jobList.back()->jobId + 1;
