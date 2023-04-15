@@ -16,16 +16,16 @@ public:
         int jobId;
         pid_t pid;
         bool isStopped;
-         char *commandLine;
+        char *commandLine;
         int secondsElapsed;
-        JobEntry(int jobId, pid_t pid, bool isStopped,  char *commandLine, int secondsElapsed);
+        JobEntry(int jobId, pid_t pid, bool isStopped, char *commandLine, int secondsElapsed);
         JobEntry(const JobEntry& other);
         ~JobEntry() = default;
     };
-    std::list<JobsList::JobEntry> jobList;
+    std::list<JobsList::JobEntry*> jobList;
     JobsList() = default;
     ~JobsList() = default;
-    void addJob( char* cmd, bool isStopped);
+    void addJob( char* cmd, bool isStopped, pid_t pid);
     void printJobsList();
     void killAllJobs();
     void removeFinishedJobs();
@@ -61,8 +61,8 @@ class ExternalCommand : public Command {
     bool isComplex;
     bool isBg;
     char **args;
-    JobsList jobs;
-  ExternalCommand( char* cmd_line, bool isComplex, bool isBg, char **args, JobsList jobs);
+    JobsList* jobs;
+  ExternalCommand( char* cmd_line, bool isComplex, bool isBg, char **args, JobsList* jobs);
   virtual ~ExternalCommand() {}
   void execute() override;
 };
@@ -102,7 +102,7 @@ public:
     std::string secondWord;
     int lengthArgs;
     bool* pathChanged;
-  ChangeDirCommand( char* cmd_line, char** plastPwd, std::string secondWord, int lengthArgs, bool* pathChanged);
+  ChangeDirCommand(char* cmd_line, char** plastPwd, std::string secondWord, int lengthArgs, bool* pathChanged);
   virtual ~ChangeDirCommand() {}
   void execute() override;
 };
@@ -135,7 +135,8 @@ public:
 class JobsCommand : public BuiltInCommand {
  // TODO: Add your data members
  public:
-  JobsCommand( char* cmd_line, JobsList* jobs);
+    JobsList* jobs;
+  JobsCommand(char* cmd_line, JobsList* jobs);
   virtual ~JobsCommand() {}
   void execute() override;
 };
@@ -202,11 +203,10 @@ class SmallShell {
     SmallShell();
 public:
     std::string prompt;
+    JobsList jobs;
     bool pathChanged;
     char *plastPwd;
     char **args;
-
-    JobsList jobs;
     Command *CreateCommand( char* cmd_line);
     char *cmd_line;
 
