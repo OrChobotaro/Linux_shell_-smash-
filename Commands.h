@@ -98,7 +98,6 @@ public:
 
 class ChangeDirCommand : public BuiltInCommand {
 public:
-// TODO: Add your data members public:
     char** plastPwd;
     char *secondWord;
     int lengthArgs;
@@ -219,6 +218,7 @@ public:
     bool pathChanged;
     Command *CreateCommand( char* cmd_line);
     char *cmd_line;
+    pid_t pidFg;
 
     SmallShell(SmallShell const&)      = delete; // disable copy ctor
     void operator=(SmallShell const&)  = delete; // disable = operator
