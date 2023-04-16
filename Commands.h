@@ -23,6 +23,7 @@ public:
         ~JobEntry() = default;
     };
     std::list<JobsList::JobEntry*> jobList;
+    int stoppedJobs; // updates in removeFinishedJobs
     JobsList() = default;
     ~JobsList() = default;
     void addJob( char* cmd, bool isStopped, pid_t pid);
@@ -153,9 +154,10 @@ class ForegroundCommand : public BuiltInCommand {
 
 class BackgroundCommand : public BuiltInCommand {
     JobsList* jobs;
-    std::string secondWord;
+    char* secondWord;
+    int argsLength;
  public:
-  BackgroundCommand( char* cmd_line, JobsList* jobs);
+  BackgroundCommand(char* cmd_line, JobsList* jobs, char* secondWord, int argsLength);
   virtual ~BackgroundCommand() {}
   void execute() override;
 };
