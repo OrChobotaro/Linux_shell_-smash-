@@ -99,10 +99,10 @@ class ChangeDirCommand : public BuiltInCommand {
 public:
 // TODO: Add your data members public:
     char** plastPwd;
-    std::string secondWord;
+    char *secondWord;
     int lengthArgs;
     bool* pathChanged;
-  ChangeDirCommand(char* cmd_line, char** plastPwd, std::string secondWord, int lengthArgs, bool* pathChanged);
+  ChangeDirCommand(char* cmd_line, char** plastPwd, char *secondWord, int lengthArgs, bool* pathChanged);
   virtual ~ChangeDirCommand() {}
   void execute() override;
 };
@@ -143,15 +143,17 @@ class JobsCommand : public BuiltInCommand {
 
 class ForegroundCommand : public BuiltInCommand {
  JobsList* jobs;
- std::string secondWord;
+ char* secondWord;
+ int argsLength;
  public:
-  ForegroundCommand(char* cmd_line, JobsList* jobs, std::string secondWord);
+  ForegroundCommand(char* cmd_line, JobsList* jobs, char* secondWord, int argsLength);
   virtual ~ForegroundCommand() {}
   void execute() override;
 };
 
 class BackgroundCommand : public BuiltInCommand {
- // TODO: Add your data members
+    JobsList* jobs;
+    std::string secondWord;
  public:
   BackgroundCommand( char* cmd_line, JobsList* jobs);
   virtual ~BackgroundCommand() {}

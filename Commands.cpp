@@ -134,10 +134,10 @@ Command * SmallShell::CreateCommand( char* cmd_line) {
       return new ChangePromptCommand(cmd_line, &prompt, args[1]);
   }
   else if (firstWord.compare("cd") == 0){
-      return new ChangeDirCommand(cmd_line, &(this->plastPwd), args[1], lengthArgs, &pathChanged);
+      return new ChangeDirCommand(cmd_line, &(this->plastPwd), args[1], lengthArgs, &pathChanged); // todo: change secondWord to char*
   }
   else if (firstWord.compare("fg") == 0){
-      return new ForegroundCommand(cmd_line, &jobs, args[1]);
+      return new ForegroundCommand(cmd_line, &jobs, args[1], lengthArgs);
   }
   else if (firstWord.compare("jobs") == 0){
       return new JobsCommand(cmd_line, &jobs);
@@ -202,18 +202,27 @@ ChangeDirCommand::ChangeDirCommand(
         // TODO: handle case with no arguments
         char *cmd_line,
         char **plastPwd,
-        std::string secondWord,
+        char *secondWord,
         int lengthArgs,
         bool* pathChanged) : BuiltInCommand(cmd_line), plastPwd(plastPwd), secondWord(secondWord), lengthArgs(lengthArgs), pathChanged(pathChanged) {}
 
 
-void ChangeDirCommand::execute() {
+void ChangeDirCommand::execute() { // todo: error if path not valid?
     char cwd[50];
     char* str = getcwd(cwd, sizeof(cwd));
 
+    if(lengthArgs == 1){
+        std::string cmd = cmd_line;
+        std::string error = "smash error:> \""+ cmd +"\"\n";
+        int errorLength = 16 + error.length();
+        write(2, error.c_str() , errorLength);
+        return;
+    }
+    std::string secondWordStr = secondWord;
+
     if(lengthArgs > 2)
         write(2, "smash error: cd: too many arguments\n", 36);
-    else if(secondWord.compare("-") == 0){
+    else if(secondWordStr.compare("-") == 0){
         if(*pathChanged) {
             if(chdir(*plastPwd)==0) {
                 strcpy(*plastPwd, str);
@@ -224,7 +233,7 @@ void ChangeDirCommand::execute() {
         }
     }
     else{
-        if(chdir(secondWord.c_str())==0){
+        if(chdir(secondWordStr.c_str())==0){
             strcpy(*plastPwd, str);
             *pathChanged = true;
         }
@@ -236,23 +245,55 @@ void ChangeDirCommand::execute() {
 
 //// fg
 
-ForegroundCommand::ForegroundCommand(char* cmd_line, JobsList* jobs, std::string secondWord): BuiltInCommand(cmd_line), jobs(jobs), secondWord(secondWord){}
+ForegroundCommand::ForegroundCommand(char* cmd_line, JobsList* jobs, char* secondWord, int argsLength): BuiltInCommand(cmd_line),
+                                                                                                            jobs(jobs), secondWord(secondWord), argsLength(argsLength){}
 
-void ForegroundCommand::execute() {
-    int jobId = stoi(secondWord);
-    cout << jobId << endl;
-    pid_t pid;
+void ForegroundCommand::execute() { // todo: check if function works
 
-    std::list<JobsList::JobEntry*>::iterator it;
-    for (it = jobs->jobList.begin(); it != jobs->jobList.end(); ++it) { // todo: check if iterator works
-        if((*it)->jobId == jobId){
-            std::cout<<(*it)->jobId;
-            pid = (*it)->pid;
+
+    if(argsLength == 1){ // if there are no args
+        if(!jobs->jobList.size()){
+            write(2, "smash error: fg: jobs list is empty\n", 36);
+            return;
         }
     }
-    std::string errorJobNotExists = "smash error: fg: job-id " + secondWord + " does not exist\n";
-    write(1, errorJobNotExists.c_str(), 41);
+
+    if(argsLength != 2){
+        write(2, "smash error: fg: invalid arguments\n", 35);
+    }
+
+    std::string secondWordStr = secondWord;
+    int intJobId = stoi(secondWordStr);
+    pid_t pid;
+
+    std::string errorJobNotExists = "smash error: fg: job-id " + secondWordStr + " does not exist\n";
+
+    if(intJobId <= 0){
+        write(2, errorJobNotExists.c_str(), 41);
+        return;
+    }
+
+    std::list<JobsList::JobEntry*>::iterator it;
+    for (it = jobs->jobList.begin(); it != jobs->jobList.end(); ++it) {
+        if((*it)->jobId == intJobId){
+            pid = (*it)->pid;
+
+            // if stopped, sends SIGCONT
+            if((*it)->isStopped){
+                kill(pid, 18); // SIGCONT - 18
+            }
+            // waitpid - process moves to foreground
+            waitpid(pid, nullptr, 0);
+            return;
+        }
+    }
+
+    write(2, errorJobNotExists.c_str(), 41);
 }
+
+
+//// bg
+
 
 
 
