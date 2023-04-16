@@ -17,8 +17,8 @@ public:
         pid_t pid;
         bool isStopped;
         char *commandLine;
-        int secondsElapsed;
-        JobEntry(int jobId, pid_t pid, bool isStopped, char *commandLine, int secondsElapsed);
+        int startTime;
+        JobEntry(int jobId, pid_t pid, bool isStopped, char *commandLine, int startTime);
         JobEntry(const JobEntry& other);
         ~JobEntry() = default;
     };
@@ -109,14 +109,14 @@ public:
 
 class GetCurrDirCommand : public BuiltInCommand {
  public:
-  GetCurrDirCommand( char* cmd_line);
+  GetCurrDirCommand(char* cmd_line);
   virtual ~GetCurrDirCommand() {}
   void execute() override;
 };
 
 class ShowPidCommand : public BuiltInCommand {
  public:
-  ShowPidCommand( char* cmd_line);
+  ShowPidCommand(char* cmd_line);
   virtual ~ShowPidCommand() {}
   void execute() override;
 };
@@ -125,7 +125,9 @@ class ShowPidCommand : public BuiltInCommand {
 class QuitCommand : public BuiltInCommand {
 // TODO: Add your data members
 public:
-  QuitCommand( char* cmd_line, JobsList* jobs);
+    JobsList* jobs;
+    char* secondWord;
+  QuitCommand(char* cmd_line, JobsList* jobs, char* secondWord);
   virtual ~QuitCommand() {}
   void execute() override;
 };
@@ -186,15 +188,18 @@ class GetFileTypeCommand : public BuiltInCommand {
 class SetcoreCommand : public BuiltInCommand {
   // TODO: Add your data members
  public:
-  SetcoreCommand( char* cmd_line);
+  SetcoreCommand(char* cmd_line);
   virtual ~SetcoreCommand() {}
   void execute() override;
 };
 
 class KillCommand : public BuiltInCommand {
- // TODO: Add your data members
  public:
-  KillCommand( char* cmd_line, JobsList* jobs);
+    JobsList* jobs;
+    char* signum;
+    char* jobid;
+    int argsLength;
+  KillCommand(char* cmd_line, JobsList* jobs, char* signum, char* jobid, int argsLength);
   virtual ~KillCommand() {}
   void execute() override;
 };

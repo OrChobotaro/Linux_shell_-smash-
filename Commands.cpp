@@ -142,6 +142,9 @@ Command * SmallShell::CreateCommand( char* cmd_line) {
   else if (firstWord.compare("jobs") == 0){
       return new JobsCommand(cmd_line, &jobs);
   }
+  else if (firstWord.compare("quit") == 0){
+      return new QuitCommand(cmd_line, &jobs, args[1]);
+  }
   else {
     return new ExternalCommand(cmd_line, isComplex, inBg, args, &jobs);
   }
@@ -174,7 +177,7 @@ void GetCurrDirCommand::execute() {
 
 //// showpid
 
-ShowPidCommand::ShowPidCommand( char *cmd_line): BuiltInCommand(cmd_line) {}
+ShowPidCommand::ShowPidCommand(char *cmd_line): BuiltInCommand(cmd_line) {}
 
 void ShowPidCommand::execute() {
     pid_t pid = getpid();
@@ -185,7 +188,7 @@ void ShowPidCommand::execute() {
 
 //// chprompt
 
-ChangePromptCommand::ChangePromptCommand( char *cmd_line, string* prompt, char* new_prompt): BuiltInCommand(cmd_line), prompt(prompt), new_prompt(new_prompt) {}
+ChangePromptCommand::ChangePromptCommand(char *cmd_line, string* prompt, char* new_prompt): BuiltInCommand(cmd_line), prompt(prompt), new_prompt(new_prompt) {}
 
 void ChangePromptCommand::execute() {
     if (new_prompt) {
@@ -321,8 +324,8 @@ void ExternalCommand::execute() {
 
 //// Job Entry
 
-JobsList::JobEntry::JobEntry(int jobId, int pid, bool isStopped,  char *commandLine, int secondsElapsed):
-        jobId(jobId), pid(pid), isStopped(isStopped), secondsElapsed(secondsElapsed) {
+JobsList::JobEntry::JobEntry(int jobId, int pid, bool isStopped,  char *commandLine, int startTime):
+        jobId(jobId), pid(pid), isStopped(isStopped), startTime(startTime) {
     this->commandLine = new char[COMMAND_ARGS_MAX_LENGTH];
     strcpy(this->commandLine, commandLine);
 }
@@ -331,7 +334,7 @@ JobsList::JobEntry::JobEntry(const JobEntry &other) {
     jobId = other.jobId;
     pid = other.pid;
     isStopped = other.isStopped;
-    secondsElapsed = other.secondsElapsed;
+    startTime = other.startTime;
     strcpy(commandLine, other.commandLine);
 }
 //// jobs
@@ -356,10 +359,83 @@ void JobsList::addJob(char* cmd, bool isStopped, pid_t pid){
 }
 
 void JobsList::printJobsList() {
+    time_t currentTime = time(nullptr);
+
     std::list<JobEntry*>::iterator it;
     for (it = jobList.begin(); it != jobList.end(); ++it){
-        std::cout << (*it)->pid << endl;
-        std::cout << (*it)->jobId << endl;
-        std::cout << (*it)->commandLine << endl;
+        time_t startTime = (*it)->startTime;
+        double secondsElapsed = difftime(currentTime, startTime);
+        string secondsElapsed_s = to_string(static_cast<int>(secondsElapsed + 0.5));
+        string jobId = to_string((*it)->jobId);
+        string pid = to_string((*it)->pid);
+        string entry = "[" + jobId + "] " + (*it)->commandLine + " : " + pid + " " + secondsElapsed_s + " secs";
+        std::cout << entry << endl;
     }
+}
+
+JobEntry * getJobById(int jobId) {
+    std::list<JobEntry*>::iterator it;
+    for (it = jobList.begin(); it != jobList.end(); ++it){
+        if ((*it)->jobId == jobId) {
+            return *it;
+        }
+    }
+
+    return nullptr;
+}
+
+//// quit
+
+QuitCommand::QuitCommand(char *cmd_line, JobsList *jobs, char* secondWord): BuiltInCommand(cmd_line), jobs(jobs), secondWord(secondWord) {}
+
+void QuitCommand::execute() {
+    if (secondWord && strcmp(secondWord, "-kill") == 0) {
+        jobs->killAllJobs();
+    }
+
+    // kill wasn't entered
+    exit(0);
+}
+
+void JobsList::killAllJobs() {
+    std::list<JobEntry*>::iterator it;
+    cout << "sending SIGKILL signal to " << jobList.size() << " jobs:" << endl;
+    for (it = jobList.begin(); it != jobList.end(); ++it){
+        pid_t pid = (*it)->pid;
+        char* cmd_line = (*it)->commandLine;
+        cout << pid << ": " << cmd_line << endl;
+        kill(pid, 9);
+    }
+}
+
+//// kill
+
+KillCommand::KillCommand(char *cmd_line, JobsList *jobs, char *signum, char *jobid, int argsLength):
+    BuiltInCommand(cmd_line), jobs(jobs), signum(signum), jobid(jobid), argsLength(argsLength) {}
+
+void KillCommand::execute() {
+    // argument validation
+    if (argsLength != 3) {
+        cerr << "smash error: kill: invalid arguments" << endl;
+    }
+    int signumInt, jobidInt;
+    try {
+        signumInt = stoi(signum);
+        jobidInt = stoi(jobid);
+    } catch (...) {
+        cerr << "smash error: kill: invalid arguments" << endl;
+    }
+    if (signum < -31 || signum > -1) {
+        cerr << "smash error: kill: invalid arguments" << endl;
+    }
+    JobsList::JobEntry jobToKill = JobsList::getJobById(jobidInt);
+    if (!jobToKill) {
+        cerr << "smash error: kill: job-id " << jobidInt << " does not exist" << endl;
+    }
+
+//    std::list<JobEntry*>::iterator it;
+//    for (it = jobList.begin(); it != jobList.end(); ++it){
+//        pid_t curr_pid = (*it)->pid;
+//        if (curr_pid == )
+//    }
 }
