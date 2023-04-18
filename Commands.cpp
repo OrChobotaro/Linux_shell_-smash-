@@ -297,7 +297,12 @@ void ForegroundCommand::execute() { // todo: check if function works
                 kill(pid, 18); // SIGCONT - 18
             }
             // waitpid - process moves to foreground
-            waitpid(pid, nullptr, 0);
+            SmallShell::getInstance().pidFg = pid;
+            SmallShell::getInstance().cmd_line = (*it)->commandLine;
+            jobs->jobList.erase(it); // erase the job
+            waitpid(pid, nullptr, WUNTRACED);
+            SmallShell::getInstance().cmd_line = nullptr;
+            SmallShell::getInstance().pidFg = -1;
             return;
         }
     }
@@ -385,7 +390,10 @@ void ExternalCommand::execute() {
             cout << "simple EXECV FAILED" << endl;
             exit(1);
         } else if(pid > 0){
-            waitpid(pid, nullptr, 0);
+            SmallShell::getInstance().pidFg = pid;
+            SmallShell::getInstance().cmd_line = cmd_line;
+            waitpid(pid, nullptr, WUNTRACED);
+            SmallShell::getInstance().pidFg = -1;
         }
 
     } else if(!isComplex && isBg) {
@@ -419,7 +427,10 @@ void ExternalCommand::execute() {
             exit(1);
 
         } else if (pid > 0) {
-            waitpid(pid, nullptr, 0);
+            SmallShell::getInstance().pidFg = pid;
+            SmallShell::getInstance().cmd_line = cmd_line;
+            waitpid(pid, nullptr, WUNTRACED);
+            SmallShell::getInstance().pidFg = -1;
         }
 
     } else if(isComplex && isBg) {
@@ -490,12 +501,16 @@ void JobsList::printJobsList() {
         string secondsElapsed_s = to_string(static_cast<int>(secondsElapsed + 0.5));
         string jobId = to_string((*it)->jobId);
         string pid = to_string((*it)->pid);
+        bool isStopped = (*it)->isStopped;
         string entry = "[" + jobId + "] " + (*it)->commandLine + " : " + pid + " " + secondsElapsed_s + " secs";
+        if(isStopped){
+            entry = entry + " (stopped)";
+        }
         std::cout << entry << endl;
     }
 }
 
-JobEntry * getJobById(int jobId) {
+/*JobsList::JobEntry * getJobById(int jobId) {
     std::list<JobEntry*>::iterator it;
     for (it = jobList.begin(); it != jobList.end(); ++it){
         if ((*it)->jobId == jobId) {
@@ -504,7 +519,7 @@ JobEntry * getJobById(int jobId) {
     }
 
     return nullptr;
-}
+}*/
 
 //// quit
 
@@ -537,7 +552,7 @@ KillCommand::KillCommand(char *cmd_line, JobsList *jobs, char *signum, char *job
 
 void KillCommand::execute() {
     // argument validation
-    if (argsLength != 3) {
+    /*if (argsLength != 3) {
         cerr << "smash error: kill: invalid arguments" << endl;
     }
     int signumInt, jobidInt;
@@ -554,7 +569,7 @@ void KillCommand::execute() {
     if (!jobToKill) {
         cerr << "smash error: kill: job-id " << jobidInt << " does not exist" << endl;
     }
-
+*/
 //    std::list<JobEntry*>::iterator it;
 //    for (it = jobList.begin(); it != jobList.end(); ++it){
 //        pid_t curr_pid = (*it)->pid;
@@ -564,21 +579,20 @@ void KillCommand::execute() {
 
 void JobsList::removeFinishedJobs() { // todo: check stopped jobs variable.
     this->stoppedJobs = 0;
-    cout << "size before removing = " << jobList.size() << endl;
 
     std::list<JobEntry*>::iterator it;
     for (it = jobList.begin(); it != jobList.end(); ++it){
         pid_t pid = (*it)->pid;
         pid_t res = waitpid(pid, NULL, WNOHANG);
+
         if((*it)->isStopped){
             this->stoppedJobs++;
         }
-        if(res > 0 && !(*it)->isStopped){ // if res greater than 0, the job finished and can be deleted.
+        if(res > 0){ // if res greater than 0, the job finished and can be deleted.
             it = jobList.erase((it));
             it--;
         }
     }
-    cout << "size of list = " << jobList.size() << endl;
     return;
 
 }
