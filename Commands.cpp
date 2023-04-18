@@ -324,10 +324,21 @@ BackgroundCommand::BackgroundCommand(char *cmd_line, JobsList *jobs, char *secon
 void BackgroundCommand::execute() {
 
     if(argsLength == 1){ // if there are no args
-        if(!jobs->stoppedJobs){ // if there are no stopped jobs // todo: and if there are?
-            write(2, "smash error: bg: there is no stopped jobs to resume\n", 52);
-            return;
+        std::list<JobsList::JobEntry*>::reverse_iterator it; // iterate and searching the stopped job with the greatest pid
+        for (it = jobs->jobList.rbegin(); it != jobs->jobList.rend(); it++) {
+            if((*it)->isStopped){
+                pid_t pid = (*it)->pid;
+
+                cout << (*it)->commandLine << " : " << pid << endl;
+
+                kill(pid, 18); // SIGCONT - 18
+                (*it)->isStopped = false; // continue running in the background
+
+                return;
+            }
         }
+        write(2, "smash error: bg: there is no stopped jobs to resume\n", 52);
+        return;
     }
 
     if(argsLength != 2){
@@ -361,6 +372,7 @@ void BackgroundCommand::execute() {
 
             // if stopped, sends SIGCONT
             if((*it)->isStopped){
+                cout << (*it)->commandLine << " : " << pid << endl;
                 kill(pid, 18); // SIGCONT - 18
                 (*it)->isStopped = false; // continue running in the background
             } else {
