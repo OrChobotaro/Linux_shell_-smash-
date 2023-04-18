@@ -300,7 +300,12 @@ void ForegroundCommand::execute() { // todo: check if function works
                 kill(pid, 18); // SIGCONT - 18
             }
             // waitpid - process moves to foreground
-            waitpid(pid, nullptr, 0);
+            SmallShell::getInstance().pidFg = pid;
+            SmallShell::getInstance().cmd_line = (*it)->commandLine;
+            jobs->jobList.erase(it); // erase the job
+            waitpid(pid, nullptr, WUNTRACED);
+            SmallShell::getInstance().cmd_line = nullptr;
+            SmallShell::getInstance().pidFg = -1;
             return;
         }
     }
@@ -385,7 +390,10 @@ void ExternalCommand::execute() {
             cout << "EXECVP FAILED" << endl;
             exit(1);
         } else if(pid > 0){
-            waitpid(pid, nullptr, 0);
+            SmallShell::getInstance().pidFg = pid;
+            SmallShell::getInstance().cmd_line = cmd_line;
+            waitpid(pid, nullptr, WUNTRACED);
+            SmallShell::getInstance().pidFg = -1;
         }
 
     } else if(!isComplex && isBg) {
@@ -417,7 +425,10 @@ void ExternalCommand::execute() {
             exit(1);
 
         } else if (pid > 0) {
-            waitpid(pid, nullptr, 0);
+            SmallShell::getInstance().pidFg = pid;
+            SmallShell::getInstance().cmd_line = cmd_line;
+            waitpid(pid, nullptr, WUNTRACED);
+            SmallShell::getInstance().pidFg = -1;
         }
 
     } else if(isComplex && isBg) {
@@ -489,7 +500,11 @@ void JobsList::printJobsList() {
         string secondsElapsed_s = to_string(static_cast<int>(secondsElapsed + 0.5));
         string jobId = to_string((*it)->jobId);
         string pid = to_string((*it)->pid);
+        bool isStopped = (*it)->isStopped;
         string entry = "[" + jobId + "] " + (*it)->commandLine + " : " + pid + " " + secondsElapsed_s + " secs";
+        if(isStopped){
+            entry = entry + " (stopped)";
+        }
         std::cout << entry << endl;
     }
 }
@@ -568,11 +583,13 @@ void JobsList::removeFinishedJobs() { // todo: check stopped jobs variable.
     for (it = jobList.begin(); it != jobList.end(); ++it){
         pid_t pid = (*it)->pid;
         pid_t res = waitpid(pid, NULL, WNOHANG);
+
         if((*it)->isStopped){
             this->stoppedJobs++;
         }
-        if(res > 0 && !(*it)->isStopped){ // if res greater than 0, the job finished and can be deleted.
-            it = jobList.erase((it)); // TODO: ask why we need isStopped check
+
+        if(res > 0){ // if res greater than 0, the job finished and can be deleted.
+            it = jobList.erase((it));
             it--;
         }
     }
