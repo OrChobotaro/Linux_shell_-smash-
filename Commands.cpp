@@ -86,10 +86,7 @@ bool _isCommandComplex(string cmd_s){
         return false;
     }
     return true;
-
 }
-
-// TODO: Add your implementation for classes in Commands.h 
 
 SmallShell::SmallShell() : prompt("smash"), jobs(), pathChanged(false)  {
     plastPwd = new char[COMMAND_ARGS_MAX_LENGTH];
@@ -147,6 +144,12 @@ Command * SmallShell::CreateCommand( char* cmd_line) {
   }
   else if (firstWord.compare("quit") == 0){
       return new QuitCommand(cmd_line, &jobs, args[1]);
+  }
+  else if (firstWord.compare("kill") == 0){
+      return new KillCommand(cmd_line, &jobs, args[1], args[2], lengthArgs);
+  }
+  else if (firstWord.compare("setcore") == 0){
+      return new SetcoreCommand(cmd_line, &jobs, args[1], args[2], lengthArgs);
   }
   else {
     return new ExternalCommand(cmd_line, isComplex, inBg, args, &jobs);
@@ -373,16 +376,13 @@ ExternalCommand::ExternalCommand( char *cmd_line, bool isComplex, bool isBg, cha
 
 
 void ExternalCommand::execute() {
-
     if(!isComplex && !isBg) {
         pid_t pid = fork();
         if(pid == 0){
             setpgrp();
-            string bin = "/bin/";
-            string cmd(args[0]);
-            string concat = bin + cmd;
-            execv(concat.c_str(), args);
-            cout << "simple EXECV FAILED" << endl;
+            string cmd = args[0];
+            execvp(cmd.c_str(), args);
+            cout << "EXECVP FAILED" << endl;
             exit(1);
         } else if(pid > 0){
             waitpid(pid, nullptr, 0);
@@ -392,13 +392,10 @@ void ExternalCommand::execute() {
         pid_t pid = fork();
         if(pid == 0) {
             setpgrp();
-            string bin = "/bin/";
-            string cmd(args[0]);
-            string concat = bin + cmd;
-            execv(concat.c_str(), args);
-            cout << "simple EXECV FAILED" << endl;
-
-            exit(0);
+            string cmd = args[0];
+            execvp(cmd.c_str(), args);
+            cout << "BG EXECVP FAILED" << endl;
+            exit(1);
         } else if (pid > 0) {
             jobs->addJob(cmd_line, false, pid);
         }
@@ -414,6 +411,7 @@ void ExternalCommand::execute() {
             complexArgs[1] = (char*)"-c";
             complexArgs[2] = temp_cmd_line;
             complexArgs[3] = NULL;
+            cout << "before execv complex fg" << endl;
             execv(complexArgs[0], complexArgs);
             cout << "complex EXECV FAILED" << endl;
             exit(1);
@@ -433,6 +431,7 @@ void ExternalCommand::execute() {
             complexArgs[1] = (char*)"-c";
             complexArgs[2] = temp_cmd_line;
             complexArgs[3] = NULL;
+            cout << "before execv complex bg" << endl;
             execv(complexArgs[0], complexArgs);
             cout << "complex EXECV FAILED" << endl;
             exit(1);
@@ -495,8 +494,8 @@ void JobsList::printJobsList() {
     }
 }
 
-JobEntry * getJobById(int jobId) {
-    std::list<JobEntry*>::iterator it;
+JobsList::JobEntry* JobsList::getJobById(int jobId) {
+    std::list<JobsList::JobEntry*>::iterator it;
     for (it = jobList.begin(); it != jobList.end(); ++it){
         if ((*it)->jobId == jobId) {
             return *it;
@@ -536,9 +535,9 @@ KillCommand::KillCommand(char *cmd_line, JobsList *jobs, char *signum, char *job
     BuiltInCommand(cmd_line), jobs(jobs), signum(signum), jobid(jobid), argsLength(argsLength) {}
 
 void KillCommand::execute() {
-    // argument validation
     if (argsLength != 3) {
         cerr << "smash error: kill: invalid arguments" << endl;
+        return;
     }
     int signumInt, jobidInt;
     try {
@@ -546,25 +545,24 @@ void KillCommand::execute() {
         jobidInt = stoi(jobid);
     } catch (...) {
         cerr << "smash error: kill: invalid arguments" << endl;
+        return;
     }
-    if (signum < -31 || signum > -1) {
+    int signumPositive = -1 * signumInt;
+    JobsList::JobEntry* jobToKill = jobs->getJobById(jobidInt);
+    if (signumPositive < 1 || signumPositive > 31 || jobidInt < 0) {
         cerr << "smash error: kill: invalid arguments" << endl;
+        return;
     }
-    JobsList::JobEntry jobToKill = JobsList::getJobById(jobidInt);
     if (!jobToKill) {
         cerr << "smash error: kill: job-id " << jobidInt << " does not exist" << endl;
+        return;
     }
 
-//    std::list<JobEntry*>::iterator it;
-//    for (it = jobList.begin(); it != jobList.end(); ++it){
-//        pid_t curr_pid = (*it)->pid;
-//        if (curr_pid == )
-//    }
+    kill(jobToKill->pid, signumPositive);
 }
 
 void JobsList::removeFinishedJobs() { // todo: check stopped jobs variable.
     this->stoppedJobs = 0;
-    cout << "size before removing = " << jobList.size() << endl;
 
     std::list<JobEntry*>::iterator it;
     for (it = jobList.begin(); it != jobList.end(); ++it){
@@ -574,11 +572,41 @@ void JobsList::removeFinishedJobs() { // todo: check stopped jobs variable.
             this->stoppedJobs++;
         }
         if(res > 0 && !(*it)->isStopped){ // if res greater than 0, the job finished and can be deleted.
-            it = jobList.erase((it));
+            it = jobList.erase((it)); // TODO: ask why we need isStopped check
             it--;
         }
     }
-    cout << "size of list = " << jobList.size() << endl;
     return;
 
+}
+
+//// setcore
+SetcoreCommand::SetcoreCommand(char *cmd_line, JobsList *jobs, char *jobid, char *core_num, int argsLength):
+        BuiltInCommand(cmd_line), jobs(jobs), jobid(jobid), core_num(core_num), argsLength(argsLength) {}
+
+void SetcoreCommand::execute() {
+    if (argsLength != 3) {
+        cerr << "smash error: kill: invalid arguments" << endl;
+        return;
+    }
+    int jobidInt, coreNumInt;
+    try {
+        jobidInt = stoi(jobid);
+        coreNumInt = stoi(core_num);
+    } catch (...) {
+        cerr << "smash error: kill: invalid arguments" << endl;
+        return;
+    }
+//    if (coreNumInt < 0 || coreNumInt > 4) TODO: check core_num valid range
+
+    JobsList::JobEntry* jobToSet = jobs->getJobById(jobidInt);
+    if (!jobToSet) {
+        cerr << "smash error: kill: job-id " << jobidInt << " does not exist" << endl;
+        return;
+    }
+
+    cpu_set_t mask;
+    CPU_ZERO(&mask);
+    CPU_SET(coreNumInt, &mask);
+    sched_setaffinity(jobToSet->pid, sizeof(mask), &mask);
 }
