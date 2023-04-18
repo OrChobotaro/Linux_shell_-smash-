@@ -303,7 +303,9 @@ void ForegroundCommand::execute() { // todo: check if function works
             SmallShell::getInstance().pidFg = pid;
             SmallShell::getInstance().cmd_line = (*it)->commandLine;
             jobs->jobList.erase(it); // erase the job
-            waitpid(pid, nullptr, WUNTRACED);
+            if(waitpid(pid, nullptr, WUNTRACED) < 0){
+                perror("smash error: waitpid failed");
+            }
             SmallShell::getInstance().cmd_line = nullptr;
             SmallShell::getInstance().pidFg = -1;
             return;
@@ -383,26 +385,34 @@ ExternalCommand::ExternalCommand( char *cmd_line, bool isComplex, bool isBg, cha
 void ExternalCommand::execute() {
     if(!isComplex && !isBg) {
         pid_t pid = fork();
+        if(pid < 0){
+            perror("smash error: fork failed");
+        }
         if(pid == 0){
             setpgrp();
             string cmd = args[0];
             execvp(cmd.c_str(), args);
-            cout << "EXECVP FAILED" << endl;
+            perror("smash error: execvp failed");
             exit(1);
         } else if(pid > 0){
-            SmallShell::getInstance().pidFg = pid;
-            SmallShell::getInstance().cmd_line = cmd_line;
-            waitpid(pid, nullptr, WUNTRACED);
+            SmallShell::getInstance().pidFg = pid; // save fg process pid
+            SmallShell::getInstance().cmd_line = cmd_line; // save fg cmd line
+            if(waitpid(pid, nullptr, WUNTRACED) < 0){
+                perror("smash error: waitpid failed");
+            }
             SmallShell::getInstance().pidFg = -1;
         }
 
     } else if(!isComplex && isBg) {
         pid_t pid = fork();
+        if(pid < 0){
+            perror("smash error: fork failed");
+        }
         if(pid == 0) {
             setpgrp();
             string cmd = args[0];
             execvp(cmd.c_str(), args);
-            cout << "BG EXECVP FAILED" << endl;
+            perror("smash error: execvp failed");
             exit(1);
         } else if (pid > 0) {
             jobs->addJob(cmd_line, false, pid);
@@ -410,6 +420,9 @@ void ExternalCommand::execute() {
 
     } else if (isComplex && !isBg) {
         pid_t pid = fork();
+        if(pid < 0){
+            perror("smash error: fork failed");
+        }
         if (pid == 0) {
             setpgrp();
             char* complexArgs[4];
@@ -419,20 +432,24 @@ void ExternalCommand::execute() {
             complexArgs[1] = (char*)"-c";
             complexArgs[2] = temp_cmd_line;
             complexArgs[3] = NULL;
-            cout << "before execv complex fg" << endl;
             execv(complexArgs[0], complexArgs);
-            cout << "complex EXECV FAILED" << endl;
+            perror("smash error: execvp failed");
             exit(1);
 
         } else if (pid > 0) {
-            SmallShell::getInstance().pidFg = pid;
-            SmallShell::getInstance().cmd_line = cmd_line;
-            waitpid(pid, nullptr, WUNTRACED);
+            SmallShell::getInstance().pidFg = pid; // save fg process pid
+            SmallShell::getInstance().cmd_line = cmd_line; // save fg cmd line
+            if(waitpid(pid, nullptr, WUNTRACED) < 0){
+                perror("smash error: waitpid failed");
+            }
             SmallShell::getInstance().pidFg = -1;
         }
 
     } else if(isComplex && isBg) {
         pid_t pid = fork();
+        if(pid < 0){
+            perror("smash error: fork failed");
+        }
         if (pid == 0) {
             setpgrp();
             char* complexArgs[4];
@@ -442,9 +459,8 @@ void ExternalCommand::execute() {
             complexArgs[1] = (char*)"-c";
             complexArgs[2] = temp_cmd_line;
             complexArgs[3] = NULL;
-            cout << "before execv complex bg" << endl;
             execv(complexArgs[0], complexArgs);
-            cout << "complex EXECV FAILED" << endl;
+            perror("smash error: execvp failed");
             exit(1);
 
         } else if (pid > 0) {
@@ -583,6 +599,9 @@ void JobsList::removeFinishedJobs() { // todo: check stopped jobs variable.
     for (it = jobList.begin(); it != jobList.end(); ++it){
         pid_t pid = (*it)->pid;
         pid_t res = waitpid(pid, NULL, WNOHANG);
+        if(res < 0){
+            perror("smash error: waitpid failed");
+        }
 
         if((*it)->isStopped){
             this->stoppedJobs++;
