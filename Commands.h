@@ -187,9 +187,10 @@ class ChmodCommand : public BuiltInCommand {
 };
 
 class GetFileTypeCommand : public BuiltInCommand {
-  // TODO: Add your data members
- public:
-  GetFileTypeCommand( char* cmd_line);
+public:
+    char *secondWord;
+    int argsLength;
+  GetFileTypeCommand(char* cmd_line, char *secondWord, int argsLength);
   virtual ~GetFileTypeCommand() {}
   void execute() override;
 };

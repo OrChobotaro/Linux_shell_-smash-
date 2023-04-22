@@ -5,6 +5,8 @@
 #include <sstream>
 #include <sys/wait.h>
 #include <iomanip>
+#include <sys/types.h>
+#include <sys/stat.h>
 #include "Commands.h"
 
 
@@ -143,6 +145,9 @@ Command * SmallShell::CreateCommand( char* cmd_line) {
   }
   else if (firstWord.compare("setcore") == 0){
       return new SetcoreCommand(cmd_line, &jobs, args[1], args[2], lengthArgs);
+  }
+  else if (firstWord.compare("getfileinfo") == 0){
+      return new GetFileTypeCommand(cmd_line, args[1], lengthArgs);
   }
   else if (firstWord.compare("chmod") == 0){
       return new ChmodCommand(cmd_line, args[1], args[2], lengthArgs);
@@ -299,7 +304,9 @@ void ForegroundCommand::execute() { // todo: check if function works
             SmallShell::getInstance().pidFg = pid;
             SmallShell::getInstance().cmd_line = (*it)->commandLine;
             jobs->jobList.erase(it); // erase the job
-            waitpid(pid, nullptr, WUNTRACED);
+            if(waitpid(pid, nullptr, WUNTRACED) < 0){
+                perror("smash error: waitpid failed");
+            }
             SmallShell::getInstance().cmd_line = nullptr;
             SmallShell::getInstance().pidFg = -1;
             return;
@@ -318,10 +325,21 @@ BackgroundCommand::BackgroundCommand(char *cmd_line, JobsList *jobs, char *secon
 void BackgroundCommand::execute() {
 
     if(argsLength == 1){ // if there are no args
-        if(!jobs->stoppedJobs){ // if there are no stopped jobs // todo: and if there are?
-            write(2, "smash error: bg: there is no stopped jobs to resume\n", 52);
-            return;
+        std::list<JobsList::JobEntry*>::reverse_iterator it; // iterate and searching the stopped job with the greatest pid
+        for (it = jobs->jobList.rbegin(); it != jobs->jobList.rend(); it++) {
+            if((*it)->isStopped){
+                pid_t pid = (*it)->pid;
+
+                cout << (*it)->commandLine << " : " << pid << endl;
+
+                kill(pid, 18); // SIGCONT - 18
+                (*it)->isStopped = false; // continue running in the background
+
+                return;
+            }
         }
+        write(2, "smash error: bg: there is no stopped jobs to resume\n", 52);
+        return;
     }
 
     if(argsLength != 2){
@@ -355,6 +373,7 @@ void BackgroundCommand::execute() {
 
             // if stopped, sends SIGCONT
             if((*it)->isStopped){
+                cout << (*it)->commandLine << " : " << pid << endl;
                 kill(pid, 18); // SIGCONT - 18
                 (*it)->isStopped = false; // continue running in the background
             } else {
@@ -379,33 +398,44 @@ ExternalCommand::ExternalCommand( char *cmd_line, bool isComplex, bool isBg, cha
 void ExternalCommand::execute() {
     if(!isComplex && !isBg) {
         pid_t pid = fork();
+        if(pid < 0){
+            perror("smash error: fork failed");
+        }
         if(pid == 0){
             setpgrp();
             string cmd = args[0];
             execvp(cmd.c_str(), args);
-            cout << "EXECVP FAILED" << endl;
+            perror("smash error: execvp failed");
             exit(0);
         } else if(pid > 0){
-            SmallShell::getInstance().pidFg = pid;
-            SmallShell::getInstance().cmd_line = cmd_line;
-            waitpid(pid, nullptr, WUNTRACED);
+            SmallShell::getInstance().pidFg = pid; // save fg process pid
+            SmallShell::getInstance().cmd_line = cmd_line; // save fg cmd line
+            if(waitpid(pid, nullptr, WUNTRACED) < 0){
+                perror("smash error: waitpid failed");
+            }
             SmallShell::getInstance().pidFg = -1;
         }
 
     } else if(!isComplex && isBg) {
         pid_t pid = fork();
+        if(pid < 0){
+            perror("smash error: fork failed");
+        }
         if(pid == 0) {
             setpgrp();
             string cmd = args[0];
             execvp(cmd.c_str(), args);
-            cout << "BG EXECVP FAILED" << endl;
-            exit(0);
+            perror("smash error: execvp failed");
+            exit(1); // todo: exit(0)?
         } else if (pid > 0) {
             jobs->addJob(cmd_line, false, pid);
         }
 
     } else if (isComplex && !isBg) {
         pid_t pid = fork();
+        if(pid < 0){
+            perror("smash error: fork failed");
+        }
         if (pid == 0) {
             setpgrp();
             char* complexArgs[4];
@@ -415,20 +445,24 @@ void ExternalCommand::execute() {
             complexArgs[1] = (char*)"-c";
             complexArgs[2] = temp_cmd_line;
             complexArgs[3] = NULL;
-            cout << "before execv complex fg" << endl;
             execv(complexArgs[0], complexArgs);
-            cout << "complex EXECV FAILED" << endl;
+            perror("smash error: execvp failed");
             exit(1);
 
         } else if (pid > 0) {
-            SmallShell::getInstance().pidFg = pid;
-            SmallShell::getInstance().cmd_line = cmd_line;
-            waitpid(pid, nullptr, WUNTRACED);
+            SmallShell::getInstance().pidFg = pid; // save fg process pid
+            SmallShell::getInstance().cmd_line = cmd_line; // save fg cmd line
+            if(waitpid(pid, nullptr, WUNTRACED) < 0){
+                perror("smash error: waitpid failed");
+            }
             SmallShell::getInstance().pidFg = -1;
         }
 
     } else if(isComplex && isBg) {
         pid_t pid = fork();
+        if(pid < 0){
+            perror("smash error: fork failed");
+        }
         if (pid == 0) {
             setpgrp();
             char* complexArgs[4];
@@ -438,9 +472,8 @@ void ExternalCommand::execute() {
             complexArgs[1] = (char*)"-c";
             complexArgs[2] = temp_cmd_line;
             complexArgs[3] = NULL;
-            cout << "before execv complex bg" << endl;
             execv(complexArgs[0], complexArgs);
-            cout << "complex EXECV FAILED" << endl;
+            perror("smash error: execvp failed");
             exit(1);
 
         } else if (pid > 0) {
@@ -579,6 +612,9 @@ void JobsList::removeFinishedJobs() { // todo: check stopped jobs variable.
     for (it = jobList.begin(); it != jobList.end(); ++it){
         pid_t pid = (*it)->pid;
         pid_t res = waitpid(pid, NULL, WNOHANG);
+        if(res < 0){
+            perror("smash error: waitpid failed");
+        }
 
         if((*it)->isStopped){
             this->stoppedJobs++;
@@ -630,6 +666,49 @@ void SetcoreCommand::execute() {
 }
 
 
+//// getfiletype
+
+
+GetFileTypeCommand::GetFileTypeCommand(char *cmd_line, char *secondWord, int argsLength)
+            : BuiltInCommand(cmd_line), secondWord(secondWord), argsLength(argsLength){}
+
+
+void GetFileTypeCommand::execute() {
+    if(argsLength != 2){
+        write(1, "smash error: gettype: invalid aruments", 38);
+        return;
+    }
+
+
+    struct stat type;
+
+    int res = stat(secondWord, &type);
+
+    std::string fileType;
+
+    if(S_ISREG(type.st_mode)){
+        fileType = "regular file";
+    } else if(S_ISDIR(type.st_mode)){
+        fileType = "directory";
+    } else if(S_ISBLK(type.st_mode)){
+        fileType = "block device";
+    } else if(S_ISCHR(type.st_mode)){
+        fileType = "character device";
+    } else if(S_ISFIFO(type.st_mode)){
+        fileType = "FIFO";
+    } else if(S_ISLNK(type.st_mode)){
+        fileType = "symbolic link";
+    } else if(S_ISSOCK(type.st_mode)){
+        fileType = "socket";
+    } else {
+        write(1, "smash error: gettype: invalid aruments", 38);
+        return;
+    }
+
+    cout << secondWord << "'s type is \"" << fileType << "\" and takes up " << type.st_size << " bytes" << endl;
+
+}
+
 //// chmod
 ChmodCommand::ChmodCommand(char *cmd_line, char *newMod, char *pathToFile, int argsLength):
 BuiltInCommand(cmd_line), newMod(newMod), pathToFile(pathToFile), argsLength(argsLength) {}
@@ -660,4 +739,5 @@ int ChmodCommand::octalToDecimal(int octalNumber) {
         octalNumber /= 10;
     }
     return decimalNumber;
+
 }
