@@ -96,13 +96,6 @@ SmallShell::SmallShell() : prompt("smash"), jobs(), pathChanged(false)  {
     cmd_line = new char[COMMAND_ARGS_MAX_LENGTH];
 }
 
-SmallShell::~SmallShell() {
-    delete[] plastPwd;
-    delete[] args;
-    delete[] cmd_line;
-}
-
-
 /**
 * Creates and returns a pointer to Command class which matches the given command line (cmd_line)
 */
@@ -155,6 +148,9 @@ Command * SmallShell::CreateCommand( char* cmd_line) {
   }
   else if (firstWord.compare("getfileinfo") == 0){
       return new GetFileTypeCommand(cmd_line, args[1], lengthArgs);
+  }
+  else if (firstWord.compare("chmod") == 0){
+      return new ChmodCommand(cmd_line, args[1], args[2], lengthArgs);
   }
   else {
     return new ExternalCommand(cmd_line, isComplex, inBg, args, &jobs);
@@ -410,7 +406,7 @@ void ExternalCommand::execute() {
             string cmd = args[0];
             execvp(cmd.c_str(), args);
             perror("smash error: execvp failed");
-            exit(1);
+            exit(0);
         } else if(pid > 0){
             SmallShell::getInstance().pidFg = pid; // save fg process pid
             SmallShell::getInstance().cmd_line = cmd_line; // save fg cmd line
@@ -430,7 +426,7 @@ void ExternalCommand::execute() {
             string cmd = args[0];
             execvp(cmd.c_str(), args);
             perror("smash error: execvp failed");
-            exit(1);
+            exit(1); // todo: exit(0)?
         } else if (pid > 0) {
             jobs->addJob(cmd_line, false, pid);
         }
@@ -639,7 +635,7 @@ SetcoreCommand::SetcoreCommand(char *cmd_line, JobsList *jobs, char *jobid, char
 
 void SetcoreCommand::execute() {
     if (argsLength != 3) {
-        cerr << "smash error: kill: invalid arguments" << endl;
+        cerr << "smash error: setcore: invalid arguments" << endl;
         return;
     }
     int jobidInt, coreNumInt;
@@ -647,14 +643,19 @@ void SetcoreCommand::execute() {
         jobidInt = stoi(jobid);
         coreNumInt = stoi(core_num);
     } catch (...) {
-        cerr << "smash error: kill: invalid arguments" << endl;
+        cerr << "smash error: setcore: invalid arguments" << endl;
         return;
     }
-//    if (coreNumInt < 0 || coreNumInt > 4) TODO: check core_num valid range
+
+    const auto core_count = std::thread::hardware_concurrency();
+
+    if (coreNumInt < 0 || coreNumInt > core_count - 1) {
+        cerr << "smash error: setcore: invalid core number" << endl;
+    }
 
     JobsList::JobEntry* jobToSet = jobs->getJobById(jobidInt);
     if (!jobToSet) {
-        cerr << "smash error: kill: job-id " << jobidInt << " does not exist" << endl;
+        cerr << "smash error: setcore: job-id " << jobidInt << " does not exist" << endl;
         return;
     }
 
@@ -663,6 +664,7 @@ void SetcoreCommand::execute() {
     CPU_SET(coreNumInt, &mask);
     sched_setaffinity(jobToSet->pid, sizeof(mask), &mask);
 }
+
 
 //// getfiletype
 
@@ -704,5 +706,38 @@ void GetFileTypeCommand::execute() {
     }
 
     cout << secondWord << "'s type is \"" << fileType << "\" and takes up " << type.st_size << " bytes" << endl;
+
+}
+
+//// chmod
+ChmodCommand::ChmodCommand(char *cmd_line, char *newMod, char *pathToFile, int argsLength):
+BuiltInCommand(cmd_line), newMod(newMod), pathToFile(pathToFile), argsLength(argsLength) {}
+
+void ChmodCommand::execute() {
+    if (argsLength != 3) {
+        cerr << "smash error: chmod: invalid arguments" << endl;
+    }
+    int newModInt, decimalNewMod;
+    try {
+        newModInt = stoi(newMod);
+    } catch (...) {
+        cerr << "smash error: chmod: invalid arguments" << endl;
+        return;
+    }
+
+    decimalNewMod = ChmodCommand::octalToDecimal(newModInt);
+    if (chmod(pathToFile, decimalNewMod) < 0) {
+        perror("smash error: chmod failed");
+    }
+}
+
+int ChmodCommand::octalToDecimal(int octalNumber) {
+    int decimalNumber = 0, i = 0;
+    while (octalNumber != 0) {
+        decimalNumber += (octalNumber % 10) * pow(8, i);
+        ++i;
+        octalNumber /= 10;
+    }
+    return decimalNumber;
 
 }

@@ -4,6 +4,9 @@
 #include <vector>
 #include <string.h>
 #include <list>
+#include <thread>
+#include <sys/stat.h>
+#include <cmath>
 
 #define COMMAND_ARGS_MAX_LENGTH (200)
 #define COMMAND_MAX_ARGS (20)
@@ -173,11 +176,14 @@ class TimeoutCommand : public BuiltInCommand {
 };
 
 class ChmodCommand : public BuiltInCommand {
-  // TODO: Add your data members
  public:
-  ChmodCommand( char* cmd_line);
+    char* newMod;
+    char* pathToFile;
+    int argsLength;
+  ChmodCommand(char* cmd_line, char* newMod, char* pathToFile, int argsLength);
   virtual ~ChmodCommand() {}
   void execute() override;
+  static int octalToDecimal(int octal);
 };
 
 class GetFileTypeCommand : public BuiltInCommand {
@@ -234,7 +240,7 @@ public:
         return instance;
     }
 
-  ~SmallShell();
+  ~SmallShell() = default;
   void executeCommand( char* cmd_line);
   // TODO: add extra methods as needed
 };
