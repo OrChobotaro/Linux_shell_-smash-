@@ -5,6 +5,8 @@
 #include <sstream>
 #include <sys/wait.h>
 #include <iomanip>
+#include <sys/types.h>
+#include <sys/stat.h>
 #include "Commands.h"
 
 
@@ -150,6 +152,9 @@ Command * SmallShell::CreateCommand( char* cmd_line) {
   }
   else if (firstWord.compare("setcore") == 0){
       return new SetcoreCommand(cmd_line, &jobs, args[1], args[2], lengthArgs);
+  }
+  else if (firstWord.compare("getfileinfo") == 0){
+      return new GetFileTypeCommand(cmd_line, args[1], lengthArgs);
   }
   else {
     return new ExternalCommand(cmd_line, isComplex, inBg, args, &jobs);
@@ -657,4 +662,47 @@ void SetcoreCommand::execute() {
     CPU_ZERO(&mask);
     CPU_SET(coreNumInt, &mask);
     sched_setaffinity(jobToSet->pid, sizeof(mask), &mask);
+}
+
+//// getfiletype
+
+
+GetFileTypeCommand::GetFileTypeCommand(char *cmd_line, char *secondWord, int argsLength)
+            : BuiltInCommand(cmd_line), secondWord(secondWord), argsLength(argsLength){}
+
+
+void GetFileTypeCommand::execute() {
+    if(argsLength != 2){
+        write(1, "smash error: gettype: invalid aruments", 38);
+        return;
+    }
+
+
+    struct stat type;
+
+    int res = stat(secondWord, &type);
+
+    std::string fileType;
+
+    if(S_ISREG(type.st_mode)){
+        fileType = "regular file";
+    } else if(S_ISDIR(type.st_mode)){
+        fileType = "directory";
+    } else if(S_ISBLK(type.st_mode)){
+        fileType = "block device";
+    } else if(S_ISCHR(type.st_mode)){
+        fileType = "character device";
+    } else if(S_ISFIFO(type.st_mode)){
+        fileType = "FIFO";
+    } else if(S_ISLNK(type.st_mode)){
+        fileType = "symbolic link";
+    } else if(S_ISSOCK(type.st_mode)){
+        fileType = "socket";
+    } else {
+        write(1, "smash error: gettype: invalid aruments", 38);
+        return;
+    }
+
+    cout << secondWord << "'s type is \"" << fileType << "\" and takes up " << type.st_size << " bytes" << endl;
+
 }
