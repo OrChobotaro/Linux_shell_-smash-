@@ -7,6 +7,7 @@
 #include <iomanip>
 #include <sys/types.h>
 #include <sys/stat.h>
+#include <fcntl.h>
 #include "Commands.h"
 
 
@@ -90,6 +91,21 @@ bool _isCommandComplex(string cmd_s){
     return true;
 }
 
+int _isRedirection(string cmd_s, size_t *pos){
+    size_t pos1 = cmd_s.find(">");
+    size_t pos2 = cmd_s.find(">>");
+
+    if(pos2 != string::npos){
+        *pos = pos2;
+        return 2;
+    } else if(pos1 != string::npos){
+        *pos = pos1;
+        return 1;
+    }
+    *pos = string::npos;
+    return 0;
+}
+
 SmallShell::SmallShell() : prompt("smash"), jobs(), pathChanged(false)  {
     plastPwd = new char[COMMAND_ARGS_MAX_LENGTH];
     args = new char*[COMMAND_MAX_ARGS];
@@ -104,20 +120,29 @@ Command * SmallShell::CreateCommand( char* cmd_line) {
     bool inBg = false;
     char temp_cmd_line[COMMAND_ARGS_MAX_LENGTH];
     strcpy(temp_cmd_line, cmd_line);
-    if (_isBackgroundCommand(temp_cmd_line)) {
+
+
+    size_t pos;
+
+    if (_isBackgroundCommand(temp_cmd_line)/* && isRedirection == 0*/) {
         inBg = true;
         _removeBackgroundSign(temp_cmd_line);
     }
     string cmd_s = _trim(string(temp_cmd_line));
+    int isRedirection = _isRedirection(cmd_s, &pos);
+
     string firstWord = cmd_s.substr(0, cmd_s.find_first_of(" \n"));
 
-  int lengthArgs = _parseCommandLine(cmd_s.c_str(), args);
+    int lengthArgs = _parseCommandLine(cmd_s.c_str(), args);
 
-  // checks if command is external complex
+    // checks if command is external complex
     bool isComplex = _isCommandComplex(cmd_s);
 
-  if (firstWord.compare("pwd") == 0) {
-      return new GetCurrDirCommand(cmd_line);
+    if (isRedirection > 0) {
+        return new RedirectionCommand(cmd_line, isRedirection, pos);
+    }
+  else if (firstWord.compare("pwd") == 0) {
+        return new GetCurrDirCommand(cmd_line);
   }
   else if (firstWord.compare("showpid") == 0) {
       return new ShowPidCommand(cmd_line);
@@ -187,7 +212,8 @@ ShowPidCommand::ShowPidCommand(char *cmd_line): BuiltInCommand(cmd_line) {}
 void ShowPidCommand::execute() {
     pid_t pid = getpid();
     string pid_str = "smash pid is " + to_string(pid) + "\n";
-    write(1, pid_str.c_str(), pid_str.size());
+//    write(1, pid_str.c_str(), pid_str.size());
+    cout << "smash pid is " << to_string(pid) << endl;
 }
 
 
@@ -741,3 +767,44 @@ int ChmodCommand::octalToDecimal(int octalNumber) {
     return decimalNumber;
 
 }
+
+RedirectionCommand::RedirectionCommand(char *cmd_line, int isRedirection, size_t pos)
+                            : Command(cmd_line), isRedirection(isRedirection), pos(pos){}
+
+void RedirectionCommand::execute() {
+
+    // if command does not fork
+    // override stdout, run command, restore stdout
+
+    char command[COMMAND_ARGS_MAX_LENGTH];
+    strncpy(command, cmd_line, pos);
+    command[pos] = '\0';
+
+    char file[200];
+    strcpy(file, cmd_line + pos + isRedirection);
+    string fileStr = file;
+
+    fileStr = _trim(fileStr);
+    fileStr.copy(file, fileStr.length());
+    file[fileStr.length()] = '\0';
+
+    int stdoutSaved = dup(1);
+    close(1); // close stdout
+
+    if (isRedirection == 1) {
+        open(file, O_WRONLY | O_CREAT);
+
+    } else if(isRedirection == 2){
+        open(file, O_WRONLY | O_CREAT | O_APPEND);
+    }
+
+    SmallShell::getInstance().executeCommand(command);
+
+    dup2(stdoutSaved, 1);
+    close(stdoutSaved);
+
+    // if command forks
+        // run external command, with special parameter
+
+}
+

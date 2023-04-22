@@ -80,9 +80,10 @@ class PipeCommand : public Command {
 };
 
 class RedirectionCommand : public Command {
- // TODO: Add your data members
+ int isRedirection;
+ size_t pos;
  public:
-  explicit RedirectionCommand( char* cmd_line);
+  RedirectionCommand(char* cmd_line, int isRedirection, size_t pos);
   virtual ~RedirectionCommand() {}
   void execute() override;
   //void prepare() override;
