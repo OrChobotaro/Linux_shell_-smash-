@@ -72,9 +72,10 @@ class ExternalCommand : public Command {
 };
 
 class PipeCommand : public Command {
-  // TODO: Add your data members
- public:
-  PipeCommand( char* cmd_line);
+public:
+int isPipe;
+size_t pipePos;
+  PipeCommand(char* cmd_line, int isPipe, size_t pipePos);
   virtual ~PipeCommand() {}
   void execute() override;
 };

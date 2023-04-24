@@ -106,6 +106,21 @@ int _isRedirection(string cmd_s, size_t *pos){
     return 0;
 }
 
+int _isPipe(string cmd_s, size_t *pipePos) {
+    size_t pos1 = cmd_s.find("|");
+    size_t pos2 = cmd_s.find("|&");
+
+    if(pos2 != string::npos){
+        *pipePos = pos2;
+        return 2;
+    } else if(pos1 != string::npos){
+        *pipePos = pos1;
+        return 1;
+    }
+    *pipePos = string::npos;
+    return 0;
+}
+
 SmallShell::SmallShell() : prompt("smash"), jobs(), pathChanged(false)  {
     plastPwd = new char[COMMAND_ARGS_MAX_LENGTH];
     args = new char*[COMMAND_MAX_ARGS];
@@ -122,7 +137,7 @@ Command * SmallShell::CreateCommand( char* cmd_line) {
     strcpy(temp_cmd_line, cmd_line);
 
 
-    size_t pos;
+    size_t pos, pipePos;
 
     if (_isBackgroundCommand(temp_cmd_line)/* && isRedirection == 0*/) {
         inBg = true;
@@ -130,6 +145,7 @@ Command * SmallShell::CreateCommand( char* cmd_line) {
     }
     string cmd_s = _trim(string(temp_cmd_line));
     int isRedirection = _isRedirection(cmd_s, &pos);
+    int isPipe = _isPipe(cmd_s, &pipePos);
 
     string firstWord = cmd_s.substr(0, cmd_s.find_first_of(" \n"));
 
@@ -141,7 +157,10 @@ Command * SmallShell::CreateCommand( char* cmd_line) {
     if (isRedirection > 0) {
         return new RedirectionCommand(cmd_line, isRedirection, pos);
     }
-  else if (firstWord.compare("pwd") == 0) {
+    else if (isPipe > 0) {
+        return new PipeCommand(cmd_line, isPipe, pipePos);
+    }
+    else if (firstWord.compare("pwd") == 0) {
         return new GetCurrDirCommand(cmd_line);
   }
   else if (firstWord.compare("showpid") == 0) {
@@ -233,7 +252,6 @@ void ChangePromptCommand::execute() {
 
 
 ChangeDirCommand::ChangeDirCommand(
-        // TODO: handle case with no arguments
         char *cmd_line,
         char **plastPwd,
         char *secondWord,
@@ -248,7 +266,7 @@ void ChangeDirCommand::execute() {
     if(lengthArgs == 1){
         std::string cmd = cmd_line;
         std::string error = "smash error:> \""+ cmd +"\"\n";
-        int errorLength = 16 + error.length();
+        int errorLength = error.length();
         write(2, error.c_str() , errorLength);
         return;
     }
@@ -772,10 +790,6 @@ RedirectionCommand::RedirectionCommand(char *cmd_line, int isRedirection, size_t
                             : Command(cmd_line), isRedirection(isRedirection), pos(pos){}
 
 void RedirectionCommand::execute() {
-
-    // if command does not fork
-    // override stdout, run command, restore stdout
-
     char command[COMMAND_ARGS_MAX_LENGTH];
     strncpy(command, cmd_line, pos);
     command[pos] = '\0';
@@ -802,9 +816,56 @@ void RedirectionCommand::execute() {
 
     dup2(stdoutSaved, 1);
     close(stdoutSaved);
-
-    // if command forks
-        // run external command, with special parameter
-
 }
 
+
+//// pipe
+PipeCommand::PipeCommand(char *cmd_line, int isPipe, size_t pipePos): Command(cmd_line), isPipe(isPipe), pipePos(pipePos) {}
+
+void PipeCommand::execute() {
+    char leftCommand[COMMAND_ARGS_MAX_LENGTH];
+    strncpy(leftCommand, cmd_line, pipePos);
+    leftCommand[pipePos] = '\0';
+
+    char rightCommand[COMMAND_ARGS_MAX_LENGTH];
+    strcpy(rightCommand, cmd_line + pipePos + isPipe);
+
+    int pipeArr[2];
+    if (pipe(pipeArr) < 0) {
+        perror("smash error: pipe failed");
+    }
+    pid_t pid = fork();
+    if (pid > 0) {
+        // father
+        close(pipeArr[0]); // close pipe read
+        int stdoutSaved;
+
+        stdoutSaved = dup(isPipe);
+        close(isPipe); // close stdout
+        dup2(pipeArr[1], isPipe); // copy pipe write to stdout
+
+        // do command
+        SmallShell::getInstance().executeCommand(leftCommand);
+
+        dup2(stdoutSaved, isPipe); // restore stdout
+        close(stdoutSaved);
+
+    } else if (pid == 0) {
+        // child
+        setpgrp();
+        close(pipeArr[1]); // closes write
+        int stdinSaved = dup(0);
+        close(0); // close stdin
+        dup2(pipeArr[0], 0); // copy pipe read to stdin
+
+        // do command
+        SmallShell::getInstance().executeCommand(rightCommand);
+
+        dup2(stdinSaved, 0); // restore stdout
+        close(stdinSaved);
+        exit(0);
+
+    } else {
+        perror("smash error: fork failed");
+    }
+}
