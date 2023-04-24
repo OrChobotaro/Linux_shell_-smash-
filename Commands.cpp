@@ -230,6 +230,9 @@ ShowPidCommand::ShowPidCommand(char *cmd_line): BuiltInCommand(cmd_line) {}
 
 void ShowPidCommand::execute() {
     pid_t pid = getpid();
+    if(pid < 0){
+        perror("smash error: getpid failed");
+    }
     string pid_str = "smash pid is " + to_string(pid) + "\n";
 //    write(1, pid_str.c_str(), pid_str.size());
     cout << "smash pid is " << to_string(pid) << endl;
@@ -248,8 +251,6 @@ void ChangePromptCommand::execute() {
     }
 }
 //// cd
-// TODO: handle syscall errors with perror
-
 
 ChangeDirCommand::ChangeDirCommand(
         char *cmd_line,
@@ -267,13 +268,18 @@ void ChangeDirCommand::execute() {
         std::string cmd = cmd_line;
         std::string error = "smash error:> \""+ cmd +"\"\n";
         int errorLength = error.length();
-        write(2, error.c_str() , errorLength);
+        if (write(2, error.c_str() , errorLength) < 0){
+            perror("smash error: write failed");
+        }
         return;
     }
     std::string secondWordStr = secondWord;
 
-    if(lengthArgs > 2)
-        write(2, "smash error: cd: too many arguments\n", 36);
+    if(lengthArgs > 2){
+        if(write(2, "smash error: cd: too many arguments\n", 36) < 0){
+            perror("smash error: write failed");
+        }
+    }
     else if(secondWordStr.compare("-") == 0){
         if(*pathChanged) {
             if(chdir(*plastPwd)==0) {
@@ -281,7 +287,9 @@ void ChangeDirCommand::execute() {
             }
         }
         else{
-            write(2, "smash error: cd: OLDPWD not set\n", 32);
+            if(write(2, "smash error: cd: OLDPWD not set\n", 32) < 0){
+                perror("smash error: perror failed");
+            }
         }
     }
     else{
@@ -292,7 +300,9 @@ void ChangeDirCommand::execute() {
         else { //todo: invalid args is faliure of chdir or regular error?
             std::string cmd = cmd_line;
             std::string errorInvalidArgs = "smash error:> \"" + cmd + "\"\n";
-            write(2, errorInvalidArgs.c_str(), 17 + cmd.length());
+            if(write(2, errorInvalidArgs.c_str(), 17 + cmd.length()) < 0){
+                perror("smash error: write failed");
+            }
         }
     }
 }
@@ -308,13 +318,17 @@ void ForegroundCommand::execute() { // todo: check if function works
 
     if(argsLength == 1){ // if there are no args
         if(!jobs->jobList.size()){
-            write(2, "smash error: fg: jobs list is empty\n", 36);
+            if(write(2, "smash error: fg: jobs list is empty\n", 36) < 0){
+                perror("smash error: write failed");
+            }
             return;
         }
     }
 
     if(argsLength != 2){
-        write(2, "smash error: fg: invalid arguments\n", 35);
+        if(write(2, "smash error: fg: invalid arguments\n", 35) < 0){
+            perror("smash error: write failed");
+        }
     }
 
     std::string secondWordStr = secondWord;
@@ -324,14 +338,18 @@ void ForegroundCommand::execute() { // todo: check if function works
     try{
         intJobId = stoi(secondWordStr);
     } catch (...) {
-        write(2, "smash error: bg: invalid arguments\n", 35);
+        if(write(2, "smash error: bg: invalid arguments\n", 35) < 0){
+            perror("smash error: write failed");
+        }
         return;
     }
 
     std::string errorJobNotExists = "smash error: fg: job-id " + secondWordStr + " does not exist\n";
 
     if(intJobId <= 0){ // todo: check if it's the right error message
-        write(2, errorJobNotExists.c_str(), 41);
+        if(write(2, errorJobNotExists.c_str(), 41) < 0){
+            perror("smash error: write failed");
+        }
         return;
     }
 
@@ -357,7 +375,7 @@ void ForegroundCommand::execute() { // todo: check if function works
         }
     }
 
-    write(2, errorJobNotExists.c_str(), 41);
+    cerr << errorJobNotExists << endl;
 }
 
 
@@ -382,12 +400,13 @@ void BackgroundCommand::execute() {
                 return;
             }
         }
-        write(2, "smash error: bg: there is no stopped jobs to resume\n", 52);
+        cerr << "smash error: bg: there is no stopped jobs to resume\n" << endl;
         return;
     }
 
     if(argsLength != 2){
-        write(2, "smash error: bg: invalid arguments\n", 35);
+        cerr << "smash error: bg: invalid arguments\n" << endl;
+        return;
     }
 
     std::string secondWordStr = secondWord;
@@ -396,7 +415,7 @@ void BackgroundCommand::execute() {
     try{
         intJobId = stoi(secondWordStr);
     } catch (...) {
-        write(2, "smash error: bg: invalid arguments\n", 35);
+        cerr << "smash error: bg: invalid arguments\n" << endl;
         return;
     }
 
@@ -405,7 +424,7 @@ void BackgroundCommand::execute() {
     std::string errorJobNotExists = "smash error: bg: job-id " + secondWordStr + " does not exist\n";
 
     if(intJobId <= 0){ // todo: which error message?
-        write(2, errorJobNotExists.c_str(), 41);
+        cerr << errorJobNotExists << endl;
         return;
     }
 
@@ -422,7 +441,7 @@ void BackgroundCommand::execute() {
                 (*it)->isStopped = false; // continue running in the background
             } else {
                 std::string errorAlreadyBg = "smash error: bg: job-id " + secondWordStr + " is already running in the background\n";
-                write(2, errorAlreadyBg.c_str(), 63);
+                cerr << errorAlreadyBg << endl;
                 return;
             }
 
@@ -430,7 +449,7 @@ void BackgroundCommand::execute() {
         }
     }
 
-    write(2, errorJobNotExists.c_str(), 41);
+    cerr << errorJobNotExists << endl;
 }
 
 //// external command
@@ -613,7 +632,9 @@ void JobsList::killAllJobs() {
         pid_t pid = (*it)->pid;
         char* cmd_line = (*it)->commandLine;
         cout << pid << ": " << cmd_line << endl;
-        kill(pid, 9);
+        if(kill(pid, 9) < 0){
+            perror("smash error: kill failed");
+        };
     }
 }
 
