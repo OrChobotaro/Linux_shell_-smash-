@@ -314,8 +314,6 @@ ForegroundCommand::ForegroundCommand(char* cmd_line, JobsList* jobs, char* secon
                                                                                                         jobs(jobs), secondWord(secondWord), argsLength(argsLength){}
 
 void ForegroundCommand::execute() { // todo: check if function works
-
-
     if(argsLength == 1){ // if there are no args
         if(!jobs->jobList.size()){
             if(write(2, "smash error: fg: jobs list is empty\n", 36) < 0){
@@ -323,33 +321,56 @@ void ForegroundCommand::execute() { // todo: check if function works
             }
             return;
         }
+        // jobs list not empty && fg w/no args
+        JobsList::JobEntry* maxJob = jobs->jobList.back();
+        pid_t pid = maxJob->pid;
+
+        cout << maxJob->commandLine << " : " << pid << endl;
+
+        if(maxJob->isStopped){
+            kill(pid, 18); // SIGCONT - 18
+        }
+        // waitpid - process moves to foreground
+        SmallShell::getInstance().pidFg = pid;
+        SmallShell::getInstance().cmd_line = maxJob->commandLine;
+        jobs->jobList.pop_back(); // erase the job
+        if(waitpid(pid, nullptr, WUNTRACED) < 0){
+            perror("smash error: waitpid failed");
+        }
+        SmallShell::getInstance().cmd_line = nullptr;
+        SmallShell::getInstance().pidFg = -1;
+        return;
     }
 
-    if(argsLength != 2){
+    if(argsLength > 2){
         if(write(2, "smash error: fg: invalid arguments\n", 35) < 0){
             perror("smash error: write failed");
         }
+        return;
     }
 
     std::string secondWordStr = secondWord;
     int intJobId;
     pid_t pid;
+    size_t pos;
 
     try{
-        intJobId = stoi(secondWordStr);
+        intJobId = stoi(secondWordStr, &pos);
     } catch (...) {
-        if(write(2, "smash error: bg: invalid arguments\n", 35) < 0){
+        if(write(2, "smash error: fg: invalid arguments\n", 35) < 0){
             perror("smash error: write failed");
         }
+        return;
+    }
+    if (secondWordStr.length() != pos) {
+        cerr << "smash error: fg: invalid arguments" << endl;
         return;
     }
 
     std::string errorJobNotExists = "smash error: fg: job-id " + secondWordStr + " does not exist\n";
 
     if(intJobId <= 0){ // todo: check if it's the right error message
-        if(write(2, errorJobNotExists.c_str(), 41) < 0){
-            perror("smash error: write failed");
-        }
+        cerr << errorJobNotExists;
         return;
     }
 
@@ -357,6 +378,8 @@ void ForegroundCommand::execute() { // todo: check if function works
     for (it = jobs->jobList.begin(); it != jobs->jobList.end(); ++it) {
         if((*it)->jobId == intJobId){
             pid = (*it)->pid;
+
+            cout << (*it)->commandLine << " : " << pid << endl;
 
             // if stopped, sends SIGCONT
             if((*it)->isStopped){
@@ -375,7 +398,7 @@ void ForegroundCommand::execute() { // todo: check if function works
         }
     }
 
-    cerr << errorJobNotExists << endl;
+    cerr << errorJobNotExists;
 }
 
 
@@ -400,22 +423,27 @@ void BackgroundCommand::execute() {
                 return;
             }
         }
-        cerr << "smash error: bg: there is no stopped jobs to resume\n" << endl;
+        cerr << "smash error: bg: there is no stopped jobs to resume\n";
         return;
     }
 
     if(argsLength != 2){
-        cerr << "smash error: bg: invalid arguments\n" << endl;
+        cerr << "smash error: bg: invalid arguments\n";
         return;
     }
 
     std::string secondWordStr = secondWord;
     int intJobId;
+    size_t pos;
 
     try{
-        intJobId = stoi(secondWordStr);
+        intJobId = stoi(secondWordStr, &pos);
     } catch (...) {
-        cerr << "smash error: bg: invalid arguments\n" << endl;
+        cerr << "smash error: bg: invalid arguments\n";
+        return;
+    }
+    if (secondWordStr.length() != pos) {
+        cerr << "smash error: bg: invalid arguments" << endl;
         return;
     }
 
@@ -424,7 +452,7 @@ void BackgroundCommand::execute() {
     std::string errorJobNotExists = "smash error: bg: job-id " + secondWordStr + " does not exist\n";
 
     if(intJobId <= 0){ // todo: which error message?
-        cerr << errorJobNotExists << endl;
+        cerr << errorJobNotExists;
         return;
     }
 
@@ -441,7 +469,7 @@ void BackgroundCommand::execute() {
                 (*it)->isStopped = false; // continue running in the background
             } else {
                 std::string errorAlreadyBg = "smash error: bg: job-id " + secondWordStr + " is already running in the background\n";
-                cerr << errorAlreadyBg << endl;
+                cerr << errorAlreadyBg;
                 return;
             }
 
@@ -449,7 +477,7 @@ void BackgroundCommand::execute() {
         }
     }
 
-    cerr << errorJobNotExists << endl;
+    cerr << errorJobNotExists;
 }
 
 //// external command
@@ -623,7 +651,7 @@ JobsList::JobEntry* JobsList::getJobById(int jobId) {
 QuitCommand::QuitCommand(char *cmd_line, JobsList *jobs, char* secondWord): BuiltInCommand(cmd_line), jobs(jobs), secondWord(secondWord) {}
 
 void QuitCommand::execute() {
-    if (secondWord && strcmp(secondWord, "-kill") == 0) {
+    if (secondWord && strcmp(secondWord, "kill") == 0) {
         jobs->killAllJobs();
     }
 
@@ -655,16 +683,24 @@ void KillCommand::execute() {
         return;
     }
     int signumInt, jobidInt;
+    size_t signumPos, jobidPos;
+    string jobidStr = jobid;
+    string signumStr = signum;
     try {
-        signumInt = stoi(signum);
-        jobidInt = stoi(jobid);
+        signumInt = stoi(signum, &signumPos);
+        jobidInt = stoi(jobid, &jobidPos);
     } catch (...) {
         cerr << "smash error: kill: invalid arguments" << endl;
         return;
     }
+    if (signumStr.length() != signumPos || jobidStr.length() != jobidPos) {
+        cerr << "smash error: kill: invalid arguments" << endl;
+        return;
+    }
+
     int signumPositive = -1 * signumInt;
     JobsList::JobEntry* jobToKill = jobs->getJobById(jobidInt);
-    if (signumPositive < 1 || signumPositive > 31 || jobidInt < 0) {
+    if (signumPositive < 1 || signumPositive > 31 || jobidInt <= 0) {
         cerr << "smash error: kill: invalid arguments" << endl;
         return;
     }
@@ -712,17 +748,24 @@ void SetcoreCommand::execute() {
         return;
     }
     int jobidInt, coreNumInt;
+    size_t jobidPos, coreNumPos;
+    string jobidStr = jobid;
+    string coreNumStr = core_num;
     try {
-        jobidInt = stoi(jobid);
-        coreNumInt = stoi(core_num);
+        jobidInt = stoi(jobid, &jobidPos);
+        coreNumInt = stoi(core_num, &coreNumPos);
     } catch (...) {
         cerr << "smash error: setcore: invalid arguments" << endl;
         return;
     }
+    if (jobidStr.length() != jobidPos || coreNumStr.length() != coreNumPos) {
+        cerr << "smash error: setcore: invalid arguments" << endl;
+        return;
+    }
 
-    const auto core_count = std::thread::hardware_concurrency();
+    const auto coreCount = std::thread::hardware_concurrency();
 
-    if (coreNumInt < 0 || coreNumInt > core_count - 1) {
+    if (coreNumInt < 0 || coreNumInt > coreCount - 1) {
         cerr << "smash error: setcore: invalid core number" << endl;
         return;
     }
@@ -749,9 +792,7 @@ GetFileTypeCommand::GetFileTypeCommand(char *cmd_line, char *secondWord, int arg
 
 void GetFileTypeCommand::execute() {
     if(argsLength != 2){
-        if (write(2, "smash error: gettype: invalid aruments", 38) < 0) {
-            perror("smash error: write failed");
-        }
+        cerr << "smash error: gettype: invalid arguments" << endl;
         return;
     }
 
@@ -774,9 +815,7 @@ void GetFileTypeCommand::execute() {
     } else if(S_ISSOCK(type.st_mode)){
         fileType = "socket";
     } else {
-        if (write(2, "smash error: gettype: invalid aruments", 38) > 0) {
-            perror("smash error: write failed");
-        }
+        cerr << "smash error: gettype: invalid arguments" << endl;
         return;
     }
 
@@ -792,9 +831,15 @@ void ChmodCommand::execute() {
         cerr << "smash error: chmod: invalid arguments" << endl;
     }
     int newModInt, decimalNewMod;
+    size_t pos;
+    string newModStr = newMod;
     try {
-        newModInt = stoi(newMod);
+        newModInt = stoi(newMod, &pos);
     } catch (...) {
+        cerr << "smash error: chmod: invalid arguments" << endl;
+        return;
+    }
+    if (newModStr.length() != pos) {
         cerr << "smash error: chmod: invalid arguments" << endl;
         return;
     }

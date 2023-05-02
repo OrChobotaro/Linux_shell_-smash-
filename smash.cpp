@@ -28,3 +28,12 @@ int main(int argc, char* argv[]) {
     }
     return 0;
 }
+
+/* PIAZZA LINKS:
+// https://piazza.com/class/lfgtde16jfs1xm/post/174 - zombie children
+ https://piazza.com/class/lfgtde16jfs1xm/post/175 - dup2 syscall?
+ https://piazza.com/class/lfgtde16jfs1xm/post/153 - kill -19 should (stopped)
+ https://piazza.com/class/lfgtde16jfs1xm/post/155 - error in external command
+ https://piazza.com/class/lfgtde16jfs1xm/post/167 - chmod valid range
+
+*/
