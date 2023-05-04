@@ -37,9 +37,7 @@ public:
     void removeJobById(int jobId);
     JobEntry * getLastJob(int* lastJobId);
     JobEntry *getLastStoppedJob(int *jobId);
-    // TODO: Add extra methods or modify exisitng ones as needed
 };
-
 
 class Command {
  public:
@@ -140,7 +138,6 @@ public:
 
 
 class JobsCommand : public BuiltInCommand {
- // TODO: Add your data members
  public:
     JobsList* jobs;
   JobsCommand(char* cmd_line, JobsList* jobs);
@@ -168,11 +165,31 @@ class BackgroundCommand : public BuiltInCommand {
   void execute() override;
 };
 
+class TimeoutList {
+public:
+    class TimeoutEntry {
+    public:
+        char *cmd_line;
+        pid_t pid;
+        int duration;
+        int timestamp;
+        TimeoutEntry(char* cmd_line, pid_t pid, int duration, int timestamp);
+        ~TimeoutEntry() = default;
+    };
+    std::list<TimeoutEntry*> timeoutList;
+    TimeoutList() = default;
+    ~TimeoutList() = default;
+    void add(char *cmd_line, pid_t pid, int duration);
+    void remove(pid_t pid);
+    time_t getNextAlarmTime();
+};
+
 class TimeoutCommand : public BuiltInCommand {
-/* Bonus */
-// TODO: Add your data members
+    TimeoutList *timeouts;
+    char *command;
+    char *duration;
  public:
-  explicit TimeoutCommand( char* cmd_line);
+  explicit TimeoutCommand(char* cmd_line, char *duration, TimeoutList *timeouts, char *command);
   virtual ~TimeoutCommand() {}
   void execute() override;
 };
@@ -228,10 +245,15 @@ public:
     char *plastPwd;
     char **args;
     JobsList jobs;
+    TimeoutList timeouts;
     bool pathChanged;
     Command *CreateCommand( char* cmd_line);
     char *cmd_line;
     pid_t pidFg;
+    pid_t currentPid;
+    bool isTimeout;
+    int duration;
+    char *timeoutCmdLine;
 
     SmallShell(SmallShell const&)      = delete; // disable copy ctor
     void operator=(SmallShell const&)  = delete; // disable = operator

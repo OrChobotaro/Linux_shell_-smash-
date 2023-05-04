@@ -4,6 +4,7 @@
 #include "Commands.h"
 #include <unistd.h>
 
+
 using namespace std;
 
 void ctrlZHandler(int sig_num) {
@@ -18,7 +19,20 @@ void ctrlZHandler(int sig_num) {
 
     // add stopped job to jobs' list
     char *cmd = SmallShell::getInstance().cmd_line;
-    SmallShell::getInstance().jobs.addJob(cmd, true, pid);
+
+    bool jobExists = false;
+    // checks if process exists in Jobs
+    std::list<JobsList::JobEntry*>::iterator it;
+    for (it = SmallShell::getInstance().jobs.jobList.begin(); it != SmallShell::getInstance().jobs.jobList.end(); ++it) {
+        if((*it)->pid == pid){
+            jobExists = true;
+            (*it)->isStopped = true;
+        }
+    }
+    if(!jobExists) {
+        SmallShell::getInstance().jobs.addJob(cmd, true, pid);
+    }
+
     std::string pidStr = std::to_string(pid);
     std::string message = "smash: process " + pidStr + " was stopped\n";
     write(1, message.c_str(), message.length());
@@ -41,6 +55,51 @@ void ctrlCHandler(int sig_num) {
 }
 
 void alarmHandler(int sig_num) {
-  // TODO: Add your implementation
+  cout << "In handler harry potter" << endl;
+
+
+   // iterates timeouts, deleting all commands with expired timeout
+    std::list<TimeoutList::TimeoutEntry*>::iterator it;
+    for (it = SmallShell::getInstance().timeouts.timeoutList.begin(); it != SmallShell::getInstance().timeouts.timeoutList.end();) {
+        if((*it)->timestamp + (*it)->duration <= time(nullptr)){
+            pid_t pid = (*it)->pid;
+            cout << "deleting pid: " << pid << endl;
+            if (kill(pid, 0) < 0) {
+                if (errno != ESRCH) {
+                    perror("smash error: kill failed");
+                    return;
+                }
+                // do nothing, child doesn't exist
+            } else {
+                cout << "smash: " << (*it)->cmd_line << " timed out!" << endl;
+                if(kill(pid, 9) < 0){
+                    perror("smash error: kill failed");
+                }
+            }
+
+            SmallShell::getInstance().timeouts.timeoutList.erase(it++);
+
+
+//            if(res < 0){
+//                perror("smash error: waitpid failed");
+//            }
+//            if(res == 0){
+//                cout << "smash: " << (*it)->cmd_line << " timed out!" << endl;
+//                if(kill(pid, 9) < 0){
+//                    perror("smash error: kill failed");
+//                }
+//            }
+        } else {
+            ++it;
+        }
+    }
+
+    // sends next alarm
+    if (!SmallShell::getInstance().timeouts.timeoutList.empty()) {
+        time_t nextAlarmTime = SmallShell::getInstance().timeouts.getNextAlarmTime();
+        if(alarm(nextAlarmTime) < 0){
+            perror("smash error: alarm failed");
+        }
+    }
 }
 
