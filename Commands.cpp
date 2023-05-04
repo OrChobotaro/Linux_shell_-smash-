@@ -121,10 +121,18 @@ int _isPipe(string cmd_s, size_t *pipePos) {
     return 0;
 }
 
-SmallShell::SmallShell() : prompt("smash"), jobs(), pathChanged(false)  {
+void findCommandTimeout(string cmd_s, char *commandC){
+    string afterTimeout = _trim(cmd_s.substr(7));
+    string command = afterTimeout.substr(afterTimeout.find(" "));
+    size_t length = command.copy(commandC, command.length());
+    commandC[length] = '\0';
+}
+
+SmallShell::SmallShell() : prompt("smash"), jobs(), timeouts(), pathChanged(false), currentPid(-1), isTimeout(false), duration() {
     plastPwd = new char[COMMAND_ARGS_MAX_LENGTH];
     args = new char*[COMMAND_MAX_ARGS];
     cmd_line = new char[COMMAND_ARGS_MAX_LENGTH];
+    timeoutCmdLine = new char[COMMAND_ARGS_MAX_LENGTH];
 }
 
 /**
@@ -134,16 +142,20 @@ Command * SmallShell::CreateCommand( char* cmd_line) {
     // check if & exists
     bool inBg = false;
     char temp_cmd_line[COMMAND_ARGS_MAX_LENGTH];
+    char timeout_cmd_line[COMMAND_ARGS_MAX_LENGTH];
     strcpy(temp_cmd_line, cmd_line);
-
+    strcpy(timeout_cmd_line, cmd_line);
 
     size_t pos, pipePos;
+
+    currentPid = -1;
 
     if (_isBackgroundCommand(temp_cmd_line)/* && isRedirection == 0*/) {
         inBg = true;
         _removeBackgroundSign(temp_cmd_line);
     }
     string cmd_s = _trim(string(temp_cmd_line));
+    string cmd_s_timeout = _trim(string(timeout_cmd_line));
     int isRedirection = _isRedirection(cmd_s, &pos);
     int isPipe = _isPipe(cmd_s, &pipePos);
 
@@ -153,6 +165,7 @@ Command * SmallShell::CreateCommand( char* cmd_line) {
 
     // checks if command is external complex
     bool isComplex = _isCommandComplex(cmd_s);
+
 
     if (isRedirection > 0) {
         return new RedirectionCommand(cmd_line, isRedirection, pos);
@@ -196,10 +209,15 @@ Command * SmallShell::CreateCommand( char* cmd_line) {
     else if (firstWord.compare("chmod") == 0){
         return new ChmodCommand(cmd_line, args[1], args[2], lengthArgs);
     }
+    else if (firstWord.compare("timeout") == 0){
+        char commandC[200];
+        findCommandTimeout(cmd_s_timeout, commandC);
+        strcpy(timeoutCmdLine, cmd_line);
+        return new TimeoutCommand(cmd_line, args[1], &timeouts, commandC);
+    }
     else {
         return new ExternalCommand(cmd_line, isComplex, inBg, args, &jobs);
     }
-    return nullptr;
 }
 
 void SmallShell::executeCommand( char *cmd_line) {
@@ -502,6 +520,9 @@ void ExternalCommand::execute() {
             exit(0);
         } else if(pid > 0){
             SmallShell::getInstance().pidFg = pid; // save fg process pid
+            if (SmallShell::getInstance().isTimeout) {
+                SmallShell::getInstance().timeouts.add(SmallShell::getInstance().timeoutCmdLine, pid, SmallShell::getInstance().duration);
+            }
             SmallShell::getInstance().cmd_line = cmd_line; // save fg cmd line
             if(waitpid(pid, nullptr, WUNTRACED) < 0){
                 perror("smash error: waitpid failed");
@@ -523,7 +544,12 @@ void ExternalCommand::execute() {
             perror("smash error: execvp failed");
             exit(0);
         } else if (pid > 0) {
-            jobs->addJob(cmd_line, false, pid);
+            if (SmallShell::getInstance().isTimeout) {
+                SmallShell::getInstance().timeouts.add(SmallShell::getInstance().timeoutCmdLine, pid, SmallShell::getInstance().duration);
+                jobs->addJob(SmallShell::getInstance().timeoutCmdLine, false, pid);
+            } else{
+                jobs->addJob(cmd_line, false, pid);
+            }
         }
 
     } else if (isComplex && !isBg) {
@@ -548,6 +574,9 @@ void ExternalCommand::execute() {
 
         } else if (pid > 0) {
             SmallShell::getInstance().pidFg = pid; // save fg process pid
+            if (SmallShell::getInstance().isTimeout) {
+                SmallShell::getInstance().timeouts.add(SmallShell::getInstance().timeoutCmdLine, pid, SmallShell::getInstance().duration);
+            }
             SmallShell::getInstance().cmd_line = cmd_line; // save fg cmd line
             if(waitpid(pid, nullptr, WUNTRACED) < 0){
                 perror("smash error: waitpid failed");
@@ -574,7 +603,12 @@ void ExternalCommand::execute() {
             exit(0);
 
         } else if (pid > 0) {
-            jobs->addJob(cmd_line, false, pid);
+            if (SmallShell::getInstance().isTimeout) {
+                SmallShell::getInstance().timeouts.add(cmd_line, pid, SmallShell::getInstance().duration);
+                jobs->addJob(SmallShell::getInstance().timeoutCmdLine, false, pid);
+            } else{
+                jobs->addJob(cmd_line, false, pid);
+            }
         }
     }
 }
@@ -661,7 +695,7 @@ void QuitCommand::execute() {
 
 void JobsList::killAllJobs() {
     std::list<JobEntry*>::iterator it;
-    cout << "sending SIGKILL signal to " << jobList.size() << " jobs:" << endl;
+    cout << "smash: sending SIGKILL signal to " << jobList.size() << " jobs:" << endl;
     for (it = jobList.begin(); it != jobList.end(); ++it){
         pid_t pid = (*it)->pid;
         char* cmd_line = (*it)->commandLine;
@@ -711,6 +745,13 @@ void KillCommand::execute() {
 
     if (kill(jobToKill->pid, signumPositive) < 0) {
         perror("smash error: kill failed");
+        return;
+    }
+
+    cout << "signal number " << signumPositive << " was sent to pid " << jobToKill->pid << endl;
+
+    if(signumPositive == 19){
+        jobToKill->isStopped = true;
     }
 }
 
@@ -890,23 +931,31 @@ void RedirectionCommand::execute() {
     if (isRedirection == 1) {
         if (open(file, O_WRONLY | O_CREAT) < 0) {
             perror("smash error: open failed");
-            dup2(stdoutSaved, 1);
+            if(dup2(stdoutSaved, 1) < 0){
+                perror("smash error: dup2 failed");
+            }
             return;
         }
 
     } else if(isRedirection == 2){
         if (open(file, O_WRONLY | O_CREAT | O_APPEND) < 0) {
             perror("smash error: open failed");
-            dup2(stdoutSaved, 1);
+            if(dup2(stdoutSaved, 1) < 0){
+                perror("smash error: dup2 failed");
+            }
             return;
         }
     }
 
     SmallShell::getInstance().executeCommand(command);
 
-    dup2(stdoutSaved, 1);
+    if(dup2(stdoutSaved, 1) < 0){
+        perror("smash error: dup2 failed");
+        return;
+    }
     if (close(stdoutSaved) < 0) {
         perror("smash error: close failed");
+        return;
     }
 }
 
@@ -945,12 +994,18 @@ void PipeCommand::execute() {
             perror("smash error: close failed");
             return;
         }
-        dup2(pipeArr[1], isPipe); // copy pipe write to stdout / stderr
+        if(dup2(pipeArr[1], isPipe) < 0){
+            perror("smash error: dup2 failed");
+            return;
+        } // copy pipe write to stdout / stderr
 
         // do command
         SmallShell::getInstance().executeCommand(leftCommand);
 
-        dup2(stdoutSaved, isPipe); // restore stdout
+        if(dup2(stdoutSaved, isPipe) < 0){
+            perror("smash error: dup2 failed");
+            return;
+        } // restore stdout
         if (close(stdoutSaved) < 0) {
             perror("smash error: close failed");
             return;
@@ -975,12 +1030,18 @@ void PipeCommand::execute() {
             perror("smash error: close failed");
             return;
         }
-        dup2(pipeArr[0], 0); // copy pipe read to stdin
+        if(dup2(pipeArr[0], 0) < 0){
+            perror("smash error: dup2 failed");
+            return;
+        } // copy pipe read to stdin
 
         // do command
         SmallShell::getInstance().executeCommand(rightCommand);
 
-        dup2(stdinSaved, 0); // restore stdout
+        if(dup2(stdinSaved, 0) < 0){
+            perror("smash error: dup2 failed");
+            return;
+        } // restore stdout
         if (close(stdinSaved) < 0) {
             perror("smash error: close failed");
             return;
@@ -992,3 +1053,96 @@ void PipeCommand::execute() {
         return;
     }
 }
+
+
+//// timeout
+
+TimeoutList::TimeoutEntry::TimeoutEntry(char *cmd_line, int pid, int duration, int timestamp): pid(pid), duration(duration), timestamp(timestamp) {
+    this->cmd_line = new char[COMMAND_ARGS_MAX_LENGTH];
+    strcpy(this->cmd_line, cmd_line);
+}
+
+time_t TimeoutList::getNextAlarmTime() {
+    time_t minExpired = timeoutList.front()->timestamp + timeoutList.front()->duration;
+    std::list<TimeoutList::TimeoutEntry*>::iterator it;
+    for (it = timeoutList.begin(); it != timeoutList.end(); ++it) {
+        int currExpired = (*it)->timestamp + (*it)->duration;
+        if(currExpired < minExpired){
+            minExpired = currExpired;
+        }
+    }
+    return minExpired - time(nullptr);
+}
+
+void TimeoutList::add(char *cmd_line, pid_t pid, int duration) {
+    time_t timestamp = time(nullptr);
+    TimeoutEntry* newTimeout = new TimeoutEntry(cmd_line, pid, duration, timestamp);
+    timeoutList.push_back(newTimeout);
+
+    time_t nextAlarmTime = getNextAlarmTime();
+    cout << "////////closest alarm time: " << nextAlarmTime << endl;
+    if(alarm(nextAlarmTime) < 0){
+        perror("smash error: alarm failed");
+    }
+}
+
+void TimeoutList::remove(pid_t pid) {
+    std::list<TimeoutList::TimeoutEntry*>::iterator it;
+    for (it = timeoutList.begin(); it != timeoutList.end();) {
+        if ((*it)->pid == pid) {
+            timeoutList.erase(it++);
+        } else {
+            it++;
+        }
+    }
+    cout << "REMOVE DID NOT FIND PID" << endl;
+}
+
+TimeoutCommand::TimeoutCommand(char* cmd_line, char *duration, TimeoutList *timeouts,  char *command): BuiltInCommand(cmd_line),
+duration(duration), timeouts(timeouts){
+    this->command = new char[COMMAND_ARGS_MAX_LENGTH];
+    strcpy(this->command, command);
+}
+
+
+void TimeoutCommand::execute() {
+
+    // convert duration to int
+    std::string durationStr = duration;
+    int durationInt;
+    pid_t pid;
+    size_t pos;
+
+    try{
+        durationInt = stoi(durationStr, &pos);
+    } catch (...) {
+        cerr << "smash error: timeout: invalid arguments" << endl;
+        return;
+    }
+    if (durationStr.length() != pos) {
+        cerr << "smash error: timeout: invalid arguments" << endl;
+        return;
+    }
+
+    SmallShell::getInstance().isTimeout = true;
+    SmallShell::getInstance().duration = durationInt;
+    SmallShell::getInstance().executeCommand(command);
+    SmallShell::getInstance().isTimeout = false;
+
+    std::list<TimeoutList::TimeoutEntry*>::iterator it;
+    for (it = timeouts->timeoutList.begin(); it != timeouts->timeoutList.end(); ++it) {
+        cout << "---------------" << endl;
+        cout << "cmd: " << (*it)->cmd_line << endl;
+        cout << "pid: " << (*it)->pid << endl;
+        cout << "duration: " << (*it)->duration << endl;
+        cout << "timestamp: " << time(nullptr) - (*it)->timestamp << endl;
+        cout << "---------------" << endl;
+    }
+}
+
+
+
+
+
+
+
