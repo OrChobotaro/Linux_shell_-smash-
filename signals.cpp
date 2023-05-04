@@ -19,7 +19,20 @@ void ctrlZHandler(int sig_num) {
 
     // add stopped job to jobs' list
     char *cmd = SmallShell::getInstance().cmd_line;
-    SmallShell::getInstance().jobs.addJob(cmd, true, pid);
+
+    bool jobExists = false;
+    // checks if process exists in Jobs
+    std::list<JobsList::JobEntry*>::iterator it;
+    for (it = SmallShell::getInstance().jobs.jobList.begin(); it != SmallShell::getInstance().jobs.jobList.end(); ++it) {
+        if((*it)->pid == pid){
+            jobExists = true;
+            (*it)->isStopped = true;
+        }
+    }
+    if(!jobExists) {
+        SmallShell::getInstance().jobs.addJob(cmd, true, pid);
+    }
+
     std::string pidStr = std::to_string(pid);
     std::string message = "smash: process " + pidStr + " was stopped\n";
     write(1, message.c_str(), message.length());

@@ -351,7 +351,7 @@ void ForegroundCommand::execute() { // todo: check if function works
         // waitpid - process moves to foreground
         SmallShell::getInstance().pidFg = pid;
         SmallShell::getInstance().cmd_line = maxJob->commandLine;
-        jobs->jobList.pop_back(); // erase the job
+        //jobs->jobList.pop_back(); // erase the job
         if(waitpid(pid, nullptr, WUNTRACED) < 0){
             perror("smash error: waitpid failed");
         }
@@ -406,7 +406,7 @@ void ForegroundCommand::execute() { // todo: check if function works
             // waitpid - process moves to foreground
             SmallShell::getInstance().pidFg = pid;
             SmallShell::getInstance().cmd_line = (*it)->commandLine;
-            jobs->jobList.erase(it); // erase the job
+            //jobs->jobList.erase(it); // erase the job
             if(waitpid(pid, nullptr, WUNTRACED) < 0){
                 perror("smash error: waitpid failed");
             }
