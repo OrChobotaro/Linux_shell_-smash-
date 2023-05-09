@@ -23,14 +23,18 @@ int main(int argc, char* argv[]) {
 
     SmallShell& smash = SmallShell::getInstance();
     smash.getInstance().pidFg = -1; // initialize foreground pid
-    char cmd_c[200];
+    char cmd_c[COMMAND_ARGS_MAX_LENGTH];
     while(true) {
         std::cout << smash.prompt + "> ";
         std::string cmd_line;
         std::getline(std::cin, cmd_line);
         std::size_t length = cmd_line.copy(cmd_c, cmd_line.length(), 0);
         cmd_c[length] = '\0';
-        smash.executeCommand(cmd_c);
+
+        if(cmd_line.find_first_not_of(" \t\n\v\f\r") != std::string::npos) {
+            // There's a non-space in the command.
+            smash.executeCommand(cmd_c);
+        }
     }
     return 0;
 }

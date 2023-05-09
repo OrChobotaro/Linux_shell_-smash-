@@ -55,42 +55,25 @@ void ctrlCHandler(int sig_num) {
 }
 
 void alarmHandler(int sig_num) {
-  cout << "In handler harry potter" << endl;
-
-
+    cout << "smash: got an alarm" << endl;
    // iterates timeouts, deleting all commands with expired timeout
     std::list<TimeoutList::TimeoutEntry*>::iterator it;
-    for (it = SmallShell::getInstance().timeouts.timeoutList.begin(); it != SmallShell::getInstance().timeouts.timeoutList.end();) {
-        if((*it)->timestamp + (*it)->duration <= time(nullptr)){
+    for (it = SmallShell::getInstance().timeouts.timeoutList.begin(); it != SmallShell::getInstance().timeouts.timeoutList.end();it++) {
+        if((*it)->timestamp + (*it)->duration <= time(nullptr)) {
+
             pid_t pid = (*it)->pid;
-            cout << "deleting pid: " << pid << endl;
-            if (kill(pid, 0) < 0) {
-                if (errno != ESRCH) {
-                    perror("smash error: kill failed");
-                    return;
-                }
-                // do nothing, child doesn't exist
-            } else {
+            pid_t res = waitpid(pid, NULL, WNOHANG);
+            if (res == 0) {
                 cout << "smash: " << (*it)->cmd_line << " timed out!" << endl;
                 if(kill(pid, 9) < 0){
                     perror("smash error: kill failed");
                 }
+            } else if (res < 0 && errno != ECHILD) {
+                perror("smash error: waitpid");
             }
 
-            SmallShell::getInstance().timeouts.timeoutList.erase(it++);
-
-
-//            if(res < 0){
-//                perror("smash error: waitpid failed");
-//            }
-//            if(res == 0){
-//                cout << "smash: " << (*it)->cmd_line << " timed out!" << endl;
-//                if(kill(pid, 9) < 0){
-//                    perror("smash error: kill failed");
-//                }
-//            }
-        } else {
-            ++it;
+            it = SmallShell::getInstance().timeouts.timeoutList.erase(it);
+            it--;
         }
     }
 

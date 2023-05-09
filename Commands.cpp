@@ -128,7 +128,8 @@ void findCommandTimeout(string cmd_s, char *commandC){
     commandC[length] = '\0';
 }
 
-SmallShell::SmallShell() : prompt("smash"), jobs(), timeouts(), pathChanged(false), currentPid(-1), isTimeout(false), duration() {
+SmallShell::SmallShell() : prompt("smash"), jobs(), timeouts(), pathChanged(false), currentPid(-1),
+isTimeout(false), duration(), isPipeExternal(false), inPipeCommand(false) {
     plastPwd = new char[COMMAND_ARGS_MAX_LENGTH];
     args = new char*[COMMAND_MAX_ARGS];
     cmd_line = new char[COMMAND_ARGS_MAX_LENGTH];
@@ -146,7 +147,9 @@ Command * SmallShell::CreateCommand( char* cmd_line) {
     strcpy(temp_cmd_line, cmd_line);
     strcpy(timeout_cmd_line, cmd_line);
 
-    size_t pos, pipePos;
+    isPipeExternal = false;
+
+    size_t pos, pipePos, pipePosInString;
 
     currentPid = -1;
 
@@ -157,7 +160,7 @@ Command * SmallShell::CreateCommand( char* cmd_line) {
     string cmd_s = _trim(string(temp_cmd_line));
     string cmd_s_timeout = _trim(string(timeout_cmd_line));
     int isRedirection = _isRedirection(cmd_s, &pos);
-    int isPipe = _isPipe(cmd_s, &pipePos);
+    int isPipe = _isPipe(cmd_s, &pipePosInString);
 
     string firstWord = cmd_s.substr(0, cmd_s.find_first_of(" \n"));
 
@@ -166,12 +169,12 @@ Command * SmallShell::CreateCommand( char* cmd_line) {
     // checks if command is external complex
     bool isComplex = _isCommandComplex(cmd_s);
 
-
     if (isRedirection > 0) {
         return new RedirectionCommand(cmd_line, isRedirection, pos);
     }
     else if (isPipe > 0) {
-        return new PipeCommand(cmd_line, isPipe, pipePos);
+
+        return new PipeCommand(cmd_line, isPipe, pipePosInString, args);
     }
     else if (firstWord.compare("pwd") == 0) {
         return new GetCurrDirCommand(cmd_line);
@@ -210,12 +213,20 @@ Command * SmallShell::CreateCommand( char* cmd_line) {
         return new ChmodCommand(cmd_line, args[1], args[2], lengthArgs);
     }
     else if (firstWord.compare("timeout") == 0){
-        char commandC[200];
+        if (lengthArgs < 3) {
+            cerr << "smash error: timeout: invalid arguments" << endl;
+            return nullptr;
+        }
+        char commandC[COMMAND_ARGS_MAX_LENGTH];
         findCommandTimeout(cmd_s_timeout, commandC);
         strcpy(timeoutCmdLine, cmd_line);
-        return new TimeoutCommand(cmd_line, args[1], &timeouts, commandC);
+        return new TimeoutCommand(cmd_line, args[1], &timeouts, commandC, lengthArgs);
     }
     else {
+        if(inPipeCommand){
+            isPipeExternal = true;
+            return nullptr;
+        }
         return new ExternalCommand(cmd_line, isComplex, inBg, args, &jobs);
     }
 }
@@ -223,7 +234,9 @@ Command * SmallShell::CreateCommand( char* cmd_line) {
 void SmallShell::executeCommand( char *cmd_line) {
     Command* cmd = CreateCommand(cmd_line);
     jobs.removeFinishedJobs();
-    cmd->execute();
+    if(cmd){
+        cmd->execute();
+    }
 }
 
 Command::Command( char *cmd_line): cmd_line(cmd_line) {}
@@ -302,11 +315,14 @@ void ChangeDirCommand::execute() {
         if(*pathChanged) {
             if(chdir(*plastPwd)==0) {
                 strcpy(*plastPwd, str);
+            } else {
+                perror("smash error: chdir failed");
+                return;
             }
         }
         else{
             if(write(2, "smash error: cd: OLDPWD not set\n", 32) < 0){
-                perror("smash error: perror failed");
+                perror("smash error: write failed");
             }
         }
     }
@@ -316,11 +332,12 @@ void ChangeDirCommand::execute() {
             *pathChanged = true;
         }
         else { //todo: invalid args is faliure of chdir or regular error?
-            std::string cmd = cmd_line;
+            perror("smash error: chdir failed");
+/*            std::string cmd = cmd_line;
             std::string errorInvalidArgs = "smash error:> \"" + cmd + "\"\n";
             if(write(2, errorInvalidArgs.c_str(), 17 + cmd.length()) < 0){
-                perror("smash error: write failed");
-            }
+                perror("smash error: write failed");}*/
+
         }
     }
 }
@@ -516,6 +533,7 @@ void ExternalCommand::execute() {
             }
             string cmd = args[0];
             execvp(cmd.c_str(), args);
+            cout << "child execvp has failed" << endl;
             perror("smash error: execvp failed");
             exit(0);
         } else if(pid > 0){
@@ -569,7 +587,7 @@ void ExternalCommand::execute() {
             complexArgs[2] = temp_cmd_line;
             complexArgs[3] = NULL;
             execv(complexArgs[0], complexArgs);
-            perror("smash error: execvp failed");
+            perror("smash error: execv failed");
             exit(0);
 
         } else if (pid > 0) {
@@ -599,7 +617,7 @@ void ExternalCommand::execute() {
             complexArgs[2] = temp_cmd_line;
             complexArgs[3] = NULL;
             execv(complexArgs[0], complexArgs);
-            perror("smash error: execvp failed");
+            perror("smash error: execv failed");
             exit(0);
 
         } else if (pid > 0) {
@@ -734,7 +752,7 @@ void KillCommand::execute() {
 
     int signumPositive = -1 * signumInt;
     JobsList::JobEntry* jobToKill = jobs->getJobById(jobidInt);
-    if (signumPositive < 1 || signumPositive > 31 || jobidInt <= 0) {
+    if (signumPositive < 1 || signumPositive > 31) {
         cerr << "smash error: kill: invalid arguments" << endl;
         return;
     }
@@ -762,13 +780,19 @@ void JobsList::removeFinishedJobs() { // todo: check stopped jobs variable.
     for (it = jobList.begin(); it != jobList.end(); ++it){
         pid_t pid = (*it)->pid;
         pid_t res = waitpid(pid, NULL, WNOHANG);
-        if(res < 0){
+        if(res < 0 && errno != ECHILD){
             perror("smash error: waitpid failed");
             return;
-        }
-
-        if((*it)->isStopped){
-            this->stoppedJobs++;
+        } else if (res < 0) {
+            if (kill(pid, 0) < 0) {
+                if (errno != ESRCH) {
+                    perror("smash error: kill failed");
+                    return;
+                } else {
+                    it = jobList.erase((it));
+                    it--;
+                }
+            }
         }
 
         if(res > 0){ // if res greater than 0, the job finished and can be deleted.
@@ -776,7 +800,6 @@ void JobsList::removeFinishedJobs() { // todo: check stopped jobs variable.
             it--;
         }
     }
-    return;
 }
 
 //// setcore
@@ -929,7 +952,7 @@ void RedirectionCommand::execute() {
     }
 
     if (isRedirection == 1) {
-        if (open(file, O_WRONLY | O_CREAT) < 0) {
+        if (open(file, O_WRONLY|O_CREAT|O_TRUNC, 0655) < 0) {
             perror("smash error: open failed");
             if(dup2(stdoutSaved, 1) < 0){
                 perror("smash error: dup2 failed");
@@ -938,7 +961,7 @@ void RedirectionCommand::execute() {
         }
 
     } else if(isRedirection == 2){
-        if (open(file, O_WRONLY | O_CREAT | O_APPEND) < 0) {
+        if (open(file, O_WRONLY|O_CREAT|O_APPEND, 0655) < 0) {
             perror("smash error: open failed");
             if(dup2(stdoutSaved, 1) < 0){
                 perror("smash error: dup2 failed");
@@ -961,35 +984,97 @@ void RedirectionCommand::execute() {
 
 
 //// pipe
-PipeCommand::PipeCommand(char *cmd_line, int isPipe, size_t pipePos): Command(cmd_line), isPipe(isPipe), pipePos(pipePos) {}
+PipeCommand::PipeCommand(char *cmd_line, int isPipe, size_t pipePosInString, char** args):
+    Command(cmd_line), isPipe(isPipe), pipePosInString(pipePosInString), args(args) {
+}
 
 void PipeCommand::execute() {
+
+/*    // args prints:
+    cout << "argsLeft:" << endl;
+    int i = 0;
+    while (argsLeft[i]) {
+        cout << "<" << argsLeft[i] << ">" << endl;
+        i++;
+    }
+    cout << "argsRight:" << endl;
+        }*/
+
+/*    int i = 0;
+    while (args[i]) {
+        cout << "<" << args[i] << ">" << endl;
+        i++;
+    }*/
+
+    int pipePos;
+    int i = 0;
+    while(args[i]) {
+        string temp = args[i];
+        if (temp.compare("|") == 0 || temp.compare("|&") == 0) {
+            pipePos = i;
+            break;
+        }
+        i++;
+    }
+    char* argsLeft[COMMAND_MAX_ARGS];
+    char* argsRight[COMMAND_MAX_ARGS];
+
+    for (int j = 0; j < pipePos; ++j) {
+        argsLeft[j] = new char[COMMAND_ARGS_MAX_LENGTH];
+        strcpy(argsLeft[j], args[j]);
+    }
+    argsLeft[pipePos] = NULL;
+
+    int k = pipePos + 1;
+    int l = 0;
+    while(args[k]) {
+        argsRight[l] = new char[COMMAND_ARGS_MAX_LENGTH];
+        strcpy(argsRight[l], args[k]);
+        k++;
+        l++;
+    }
+    argsRight[l] = NULL;
+
+//    int s = 0;
+//    while(argsRight[s]){
+//        cout << "//////argsRight in index: " << s << " is: " << argsRight[s] << endl;
+//        s++;
+//    }
+
+
+    SmallShell::getInstance().inPipeCommand = true;
+
     char leftCommand[COMMAND_ARGS_MAX_LENGTH];
-    strncpy(leftCommand, cmd_line, pipePos);
-    leftCommand[pipePos] = '\0';
+    strncpy(leftCommand, cmd_line, pipePosInString);
+    leftCommand[pipePosInString] = '\0';
 
     char rightCommand[COMMAND_ARGS_MAX_LENGTH];
-    strcpy(rightCommand, cmd_line + pipePos + isPipe);
+    strcpy(rightCommand, cmd_line + pipePosInString + isPipe);
 
     int pipeArr[2];
     if (pipe(pipeArr) < 0) {
         perror("smash error: pipe failed");
         return;
     }
-    pid_t pid = fork();
-    if (pid > 0) {
-        // father
+
+    pid_t pidLeft = fork();
+    if(pidLeft == 0){ // first child
+        if (setpgrp() < 0) {
+            perror("smash error: setpgrp failed");
+            return;
+        }
+
         if (close(pipeArr[0]) < 0) { // close pipe read
             perror("smash error: close failed");
             return;
         }
         int stdoutSaved;
-
         stdoutSaved = dup(isPipe);
         if (stdoutSaved < 0) {
             perror("smash error: dup failed");
             return;
         }
+
         if (close(isPipe) < 0) { // close stdout / stderr
             perror("smash error: close failed");
             return;
@@ -999,59 +1084,185 @@ void PipeCommand::execute() {
             return;
         } // copy pipe write to stdout / stderr
 
-        // do command
         SmallShell::getInstance().executeCommand(leftCommand);
 
-        if(dup2(stdoutSaved, isPipe) < 0){
-            perror("smash error: dup2 failed");
-            return;
-        } // restore stdout
-        if (close(stdoutSaved) < 0) {
-            perror("smash error: close failed");
-            return;
+        if(SmallShell::getInstance().isPipeExternal){
+            execvp(argsLeft[0], argsLeft);
+            perror("smash error: execvp failed");
+            exit(0);
         }
 
-    } else if (pid == 0) {
-        // child
-        if (setpgrp() < 0) {
-            perror("smash error: setpgrp failed");
-            return;
-        }
-        if (close(pipeArr[1]) < 0) { // closes write
-            perror("smash error: close failed");
-            return;
-        }
-        int stdinSaved = dup(0);
-        if (stdinSaved < 0) {
-            perror("smash error: dup failed");
-            return;
-        }
-        if (close(0) < 0) { // close stdin
-            perror("smash error: close failed");
-            return;
-        }
-        if(dup2(pipeArr[0], 0) < 0){
-            perror("smash error: dup2 failed");
-            return;
-        } // copy pipe read to stdin
-
-        // do command
-        SmallShell::getInstance().executeCommand(rightCommand);
-
-        if(dup2(stdinSaved, 0) < 0){
-            perror("smash error: dup2 failed");
-            return;
-        } // restore stdout
-        if (close(stdinSaved) < 0) {
-            perror("smash error: close failed");
-            return;
-        }
         exit(0);
 
+    } else if (pidLeft > 0){
+        pid_t pidRight = fork();
+        if(pidRight == 0) { // second child
+            if (setpgrp() < 0) {
+                perror("smash error: setpgrp failed");
+                return;
+            }
+
+            if (close(pipeArr[1]) < 0) { // closes write
+                perror("smash error: close failed");
+                return;
+            }
+            int stdinSaved = dup(0);
+            if (stdinSaved < 0) {
+                perror("smash error: dup failed");
+                return;
+            }
+            if (close(0) < 0) { // close stdin
+                perror("smash error: close failed");
+                return;
+            }
+            if(dup2(pipeArr[0], 0) < 0){
+                perror("smash error: dup2 failed");
+                return;
+            } // copy pipe read to stdin
+
+
+            SmallShell::getInstance().executeCommand(rightCommand);
+
+            if(SmallShell::getInstance().isPipeExternal){
+                execvp(argsRight[0], argsRight);
+                perror("smash error: execvp failed");
+                exit(0);
+            }
+
+            exit(0);
+
+        } else if(pidRight > 0){
+            if(close(pipeArr[0]) < 0){
+                perror("smash error: close failed");
+            }
+            if(close(pipeArr[1]) < 0){
+                perror("smash error: close failed");
+            }
+            pid_t firstProcess = wait(nullptr);
+            if(firstProcess < 0) {
+                perror("smash error: wait failed");
+            }
+            if(wait(nullptr) < 0){
+                perror("smash error: wait failed");
+            }
+            SmallShell::getInstance().inPipeCommand = false;
+        } else {
+            // second fork failed
+            perror("smash error: fork failed");
+            exit(0);
+        }
+
     } else {
+        // first fork failed
         perror("smash error: fork failed");
-        return;
+        exit(0);
     }
+    /*pid_t pipeParentPid = fork();
+    if (pipeParentPid > 0) {
+        if(waitpid(pipeParentPid, nullptr, WUNTRACED) < 0){
+            perror("smash error: waitpid failed");
+        }
+    } else if (pipeParentPid == 0) {
+        // maybe should just pipe in here
+        pid_t pid = fork();
+        if (pid > 0) {
+            cout << "in father fork in pipe" << endl;
+            // father
+            if (close(pipeArr[0]) < 0) { // close pipe read
+                perror("smash error: close failed");
+                return;
+            }
+            int stdoutSaved;
+            cout << "after if 1" << endl;
+
+            stdoutSaved = dup(isPipe);
+            if (stdoutSaved < 0) {
+                perror("smash error: dup failed");
+                return;
+            }
+            cout << "after if 2" << endl;
+            if (close(isPipe) < 0) { // close stdout / stderr
+                cout << "bonjour" << endl;
+                perror("smash error: close failed");
+                return;
+            }
+            cout << "after if 3" << endl;
+            if(dup2(pipeArr[1], isPipe) < 0){
+                perror("smash error: dup2 failed");
+                return;
+            } // copy pipe write to stdout / stderr
+
+            // do command
+            write(stdoutSaved, "father before left command exe\n", 31);
+            SmallShell::getInstance().executeCommand(leftCommand);
+            write(stdoutSaved, "father after left command exe\n", 30);
+
+//            close(isPipe);
+//            if(dup2(stdoutSaved, isPipe) < 0){
+//                write(stdoutSaved, "bonjour 1\n", 10);
+//                cout << "bonjour 1" << endl;
+//                perror("smash error: dup2 failed");
+//                return;
+//            } // restore stdout
+
+            write(stdoutSaved, "between stupid ifs write\n", 25);
+
+//            if (close(stdoutSaved) < 0) {
+//                write(stdoutSaved, "bonjour 2\n", 10);
+//                cout << "bonjour 2" << endl;
+//                perror("smash error: close failed");
+//                return;
+//            }
+
+            exit(0);
+
+        } else if (pid == 0) {
+            // child
+            if (setpgrp() < 0) {
+                perror("smash error: setpgrp failed");
+                return;
+            }
+            if (close(pipeArr[1]) < 0) { // closes write
+                perror("smash error: close failed");
+                return;
+            }
+            int stdinSaved = dup(0);
+            if (stdinSaved < 0) {
+                perror("smash error: dup failed");
+                return;
+            }
+            if (close(0) < 0) { // close stdin
+                perror("smash error: close failed");
+                return;
+            }
+            if(dup2(pipeArr[0], 0) < 0){
+                perror("smash error: dup2 failed");
+                return;
+            } // copy pipe read to stdin
+
+            // do command
+            cout << "before child execute command" << endl;
+            SmallShell::getInstance().executeCommand(rightCommand);
+            cout << "after child execute command" << endl;
+
+//            if(dup2(stdinSaved, 0) < 0){
+//                cout << "exiting because of dup2" << endl;
+//                perror("smash error: dup2 failed");
+//                return;
+//            } // restore stdout
+//            if (close(stdinSaved) < 0) {
+//                cout << "exiting because of close" << endl;
+//                perror("smash error: close failed");
+//                return;
+//            }
+//            cout << "Exiting pipe son" << endl;
+            exit(0);
+
+        } else {
+            perror("smash error: fork failed");
+            return;
+        }
+    }*/
 }
 
 
@@ -1080,7 +1291,6 @@ void TimeoutList::add(char *cmd_line, pid_t pid, int duration) {
     timeoutList.push_back(newTimeout);
 
     time_t nextAlarmTime = getNextAlarmTime();
-    cout << "////////closest alarm time: " << nextAlarmTime << endl;
     if(alarm(nextAlarmTime) < 0){
         perror("smash error: alarm failed");
     }
@@ -1098,15 +1308,14 @@ void TimeoutList::remove(pid_t pid) {
     cout << "REMOVE DID NOT FIND PID" << endl;
 }
 
-TimeoutCommand::TimeoutCommand(char* cmd_line, char *duration, TimeoutList *timeouts,  char *command): BuiltInCommand(cmd_line),
-duration(duration), timeouts(timeouts){
+TimeoutCommand::TimeoutCommand(char* cmd_line, char *duration, TimeoutList *timeouts, char *command, int argsLength): BuiltInCommand(cmd_line),
+duration(duration), timeouts(timeouts), argsLength(argsLength) {
     this->command = new char[COMMAND_ARGS_MAX_LENGTH];
     strcpy(this->command, command);
 }
 
 
 void TimeoutCommand::execute() {
-
     // convert duration to int
     std::string durationStr = duration;
     int durationInt;
@@ -1124,20 +1333,25 @@ void TimeoutCommand::execute() {
         return;
     }
 
+    if (durationInt <= 0) {
+        cerr << "smash error: timeout: invalid arguments" << endl;
+        return;
+    }
+
     SmallShell::getInstance().isTimeout = true;
     SmallShell::getInstance().duration = durationInt;
     SmallShell::getInstance().executeCommand(command);
     SmallShell::getInstance().isTimeout = false;
 
-    std::list<TimeoutList::TimeoutEntry*>::iterator it;
-    for (it = timeouts->timeoutList.begin(); it != timeouts->timeoutList.end(); ++it) {
-        cout << "---------------" << endl;
-        cout << "cmd: " << (*it)->cmd_line << endl;
-        cout << "pid: " << (*it)->pid << endl;
-        cout << "duration: " << (*it)->duration << endl;
-        cout << "timestamp: " << time(nullptr) - (*it)->timestamp << endl;
-        cout << "---------------" << endl;
-    }
+//    std::list<TimeoutList::TimeoutEntry*>::iterator it;
+//    for (it = timeouts->timeoutList.begin(); it != timeouts->timeoutList.end(); ++it) {
+//        cout << "---------------" << endl;
+//        cout << "cmd: " << (*it)->cmd_line << endl;
+//        cout << "pid: " << (*it)->pid << endl;
+//        cout << "duration: " << (*it)->duration << endl;
+//        cout << "timestamp: " << time(nullptr) - (*it)->timestamp << endl;
+//        cout << "---------------" << endl;
+//    }
 }
 
 

@@ -64,7 +64,7 @@ class ExternalCommand : public Command {
     bool isBg;
     char **args;
     JobsList* jobs;
-  ExternalCommand( char* cmd_line, bool isComplex, bool isBg, char **args, JobsList* jobs);
+  ExternalCommand(char* cmd_line, bool isComplex, bool isBg, char **args, JobsList* jobs);
   virtual ~ExternalCommand() {}
   void execute() override;
 };
@@ -72,8 +72,11 @@ class ExternalCommand : public Command {
 class PipeCommand : public Command {
 public:
 int isPipe;
-size_t pipePos;
-  PipeCommand(char* cmd_line, int isPipe, size_t pipePos);
+size_t pipePosInString;
+//char** argsLeft;
+//char** argsRight;
+char **args;
+  PipeCommand(char* cmd_line, int isPipe, size_t pipePosInString , char** args);
   virtual ~PipeCommand() {}
   void execute() override;
 };
@@ -188,8 +191,9 @@ class TimeoutCommand : public BuiltInCommand {
     TimeoutList *timeouts;
     char *command;
     char *duration;
+    int argsLength;
  public:
-  explicit TimeoutCommand(char* cmd_line, char *duration, TimeoutList *timeouts, char *command);
+  explicit TimeoutCommand(char* cmd_line, char *duration, TimeoutList *timeouts, char *command, int argsLength);
   virtual ~TimeoutCommand() {}
   void execute() override;
 };
@@ -254,6 +258,8 @@ public:
     bool isTimeout;
     int duration;
     char *timeoutCmdLine;
+    bool isPipeExternal;
+    bool inPipeCommand;
 
     SmallShell(SmallShell const&)      = delete; // disable copy ctor
     void operator=(SmallShell const&)  = delete; // disable = operator
